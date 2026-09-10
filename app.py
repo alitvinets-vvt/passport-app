@@ -18,6 +18,7 @@ load_dotenv()
 st.set_page_config(page_title="Плановий Паспорт — скелет", page_icon="📖", layout="centered")
 
 SHEET_ID = os.environ.get("PASSPORT_SHEET_ID", "")
+params = None
 
 st.title("📖 Плановий Паспорт книжки")
 st.caption("Скелет застосунку · крок 3 роадмепу · без розрахунків")
@@ -40,6 +41,10 @@ try:
     params = _load(SHEET_ID)
 except Exception as e:
     st.error(f"Не вдалося прочитати таблицю параметрів: {e}")
+    st.stop()
+
+if not isinstance(params, dict):
+    st.error("Не вдалося отримати словник параметрів із Google Sheets.")
     st.stop()
 
 # ---- Санітарна панель: що реально прочиталось ----
