@@ -20,24 +20,24 @@ st.set_page_config(page_title="Плановий Паспорт", page_icon="📖
 st.markdown(
     """
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500&family=Montserrat:wght@400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap');
 
     html, body, [class*="css"] {
         font-family: 'Montserrat', -apple-system, sans-serif;
     }
 
-    /* Fraunces лишається тільки для H1; усе інше — Montserrat. */
-    h2, h3, [data-testid="stMarkdownContainer"] h2,
-    [data-testid="stMarkdownContainer"] h3 {
+    /* Montserrat — єдиний шрифт застосунку, без винятків. */
+    h1, h2, h3, [data-testid="stMarkdownContainer"] h1,
+    [data-testid="stMarkdownContainer"] h2, [data-testid="stMarkdownContainer"] h3 {
         font-family: 'Montserrat', -apple-system, sans-serif !important;
         font-weight: 600;
         color: #241A17;
     }
 
     h1, [data-testid="stMarkdownContainer"] h1 {
-        font-family: 'Fraunces', Georgia, serif !important;
-        font-weight: 500;
+        font-weight: 700;
         font-size: 1.9rem !important;
+        line-height: 1.35 !important;
         color: #241A17;
         letter-spacing: 0;
     }
@@ -47,9 +47,11 @@ st.markdown(
     }
 
     /* Компактність: менше повітря між полями форми, вужчі відступи
-       контейнера й заголовків. */
+       контейнера й заголовків. padding-top не менше висоти
+       фіксованого хедера Streamlit (~60px) — інакше він перекриває
+       верх H1 (саме це, а не шрифт, різало заголовок раніше). */
     .block-container {
-        padding-top: 0.9rem !important;
+        padding-top: 4rem !important;
         padding-bottom: 2rem !important;
     }
     div[data-testid="stVerticalBlock"] {
@@ -126,8 +128,8 @@ st.markdown(
         opacity: 0.85;
     }
     .rrc-hero .rrc-value {
-        font-family: 'Fraunces', Georgia, serif;
-        font-weight: 500;
+        font-family: 'Montserrat', -apple-system, sans-serif;
+        font-weight: 700;
         font-size: 3rem;
         line-height: 1.2;
     }
