@@ -1,9 +1,9 @@
 """
-Плановий Паспорт книжки — СКЕЛЕТ (крок 3 роадмепу).
+Плановий Паспорт книжки.
 
-Мета цього файлу: підтвердити, що застосунок піднімається на Railway,
-підключається до Google Sheets і коректно читає майстер-таблицю параметрів.
-Розрахунків (§4 драфту v0.2) тут свідомо ще немає — це крок 4.
+Крок 4 роадмепу: розрахунок собівартості (Блок 1 — оригінал-макет) і
+заготовка формули РРЦ. Блок 2 (друк) ще не реалізований — чекає цін
+від технолога (§6, §9.4 драфту v0.2).
 """
 
 import os
@@ -11,17 +11,18 @@ import os
 from dotenv import load_dotenv
 import streamlit as st
 
+from calculator import calculate
 from sheets_reader import load_params, get_tier_for_naklad
 
 load_dotenv()
 
-st.set_page_config(page_title="Плановий Паспорт — скелет", page_icon="📖", layout="centered")
+st.set_page_config(page_title="Плановий Паспорт", page_icon="📖", layout="centered")
 
 SHEET_ID = os.environ.get("PASSPORT_SHEET_ID", "")
 params = None
 
 st.title("📖 Плановий Паспорт книжки")
-st.caption("Скелет застосунку · крок 3 роадмепу · без розрахунків")
+st.caption("Крок 4 роадмепу · розрахунок оригінал-макету · друк ще не підключений")
 
 if not SHEET_ID:
     st.error(
@@ -88,6 +89,20 @@ with col2:
 naklad = st.number_input("Наклад", min_value=100, value=3100, step=100)
 avans = st.number_input("Аванс за текст, грн", min_value=0, value=0, step=1000)
 
+st.caption(
+    "Обкладинка (дизайн) і ефекти — суми, узгоджені по проєкту вручну "
+    "(поки не тарифікуються в майстер-таблиці для Блоку 1)."
+)
+col3, col4 = st.columns(2)
+with col3:
+    oblozhka_suma = st.number_input(
+        "Обкладинка (дизайн), грн чистими", min_value=0, value=0, step=100
+    )
+with col4:
+    efekty_suma = st.number_input(
+        "Ефекти обкладинки, грн чистими", min_value=0, value=0, step=100
+    )
+
 st.divider()
 
 
@@ -114,7 +129,74 @@ r2.write(f"**Ціна зрізу ({fmt}):** {_display_value(params['zriz'].get(f
 r2.write(f"**Обкладинка ({fmt} / {effect}):** {_display_value(params['cover'].get((fmt, effect)))} грн")
 r2.write(f"**Тир ({naklad}):** {tier['tier'] if tier else '—'} (k={tier['k'] if tier else '—'})")
 
-st.info(
-    "Розрахунок собівартості й РРЦ (§4–7 драфту) підключається на кроці 4. "
-    "Цей екран лише підтверджує, що всі look-up'и з майстер-таблиці працюють коректно."
-)
+st.divider()
+
+# ---- Розрахунок (§4-§8 драфту) — Блок 1 (оригінал-макет) + заготовка РРЦ ----
+st.subheader("Розрахунок собівартості")
+
+if st.button("🧮 Розрахувати", type="primary"):
+    inputs = {
+        "format": fmt,
+        "zirka": zirka,
+        "complexity": complexity,
+        "perekladna": is_translated,
+        "znaky": znaky,
+        "oblozhka": oblozhka_suma,
+        "efekty": efekty_suma,
+        "color_mode": color_mode,
+        "has_zriz": has_zriz,
+        "naklad": naklad,
+        "avans": avans,
+    }
+    result = calculate(inputs, params)
+
+    st.write(f"**Знаків до розрахунку (з коеф. перекладу):** {result['znaky_rozrah']:,.0f}".replace(",", " "))
+
+    row_labels = {
+        "аванс": "Аванс за текст (АЛД)",
+        "переклад": "Переклад (АЛД)",
+        "редагування": "Редагування (ДП)",
+        "коректура": "Коректура (ДП)",
+        "обкладинка": "Обкладинка, дизайн (ДП)",
+        "ефекти": "Ефекти обкладинки (ДП)",
+    }
+
+    def _fmt(v):
+        return f"{v:,.2f}".replace(",", " ")
+
+    table_rows = []
+    for key, label in row_labels.items():
+        row = result["rows"][key]
+        table_rows.append(
+            {
+                "Стаття": label,
+                "Чистими, грн": _fmt(row["chysto"]),
+                "Тіло, грн": _fmt(row["tilo"]),
+                "ЄСВ, грн": _fmt(row["esv"]),
+                "Разом, грн": _fmt(row["razom"]),
+            }
+        )
+    table_rows.append(
+        {
+            "Стаття": "Інші витрати (12%)",
+            "Чистими, грн": "—",
+            "Тіло, грн": "—",
+            "ЄСВ, грн": "—",
+            "Разом, грн": _fmt(result["inshi"]),
+        }
+    )
+
+    st.table(table_rows)
+
+    st.metric("ОРИГІНАЛ-МАКЕТ, грн", f"{result['oryhinal_maket']:,.2f}".replace(",", " "))
+
+    st.divider()
+    st.subheader("РРЦ")
+    if result["rrc"] is None:
+        st.warning(
+            "друк ще не порахований — очікує даних від технолога "
+            "(§6, §9.4 драфту: ціни зошита/обкладинки/зрізу, множник 4+4). "
+            "РРЦ: —"
+        )
+    else:
+        st.metric("РРЦ, грн", result["rrc"])
