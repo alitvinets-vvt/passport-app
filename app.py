@@ -1,9 +1,8 @@
 """
 Плановий Паспорт книжки.
 
-Крок 4 роадмепу: розрахунок собівартості (Блок 1 — оригінал-макет) і
-заготовка формули РРЦ. Блок 2 (друк) ще не реалізований — чекає цін
-від технолога (§6, §9.4 драфту v0.2).
+Крок 5 роадмепу: повний розрахунок собівартості (Блок 1 — оригінал-макет,
+Блок 2 — друк) і РРЦ за §3-§8 драфту v0.2.
 """
 
 import os
@@ -22,7 +21,7 @@ SHEET_ID = os.environ.get("PASSPORT_SHEET_ID", "")
 params = None
 
 st.title("📖 Плановий Паспорт книжки")
-st.caption("Крок 4 роадмепу · розрахунок оригінал-макету · друк ще не підключений")
+st.caption("Крок 5 роадмепу · повний розрахунок собівартості й РРЦ")
 
 if not SHEET_ID:
     st.error(
@@ -144,6 +143,7 @@ if st.button("🧮 Розрахувати", type="primary"):
         "oblozhka": oblozhka_suma,
         "efekty": efekty_suma,
         "color_mode": color_mode,
+        "effect": effect,
         "has_zriz": has_zriz,
         "naklad": naklad,
         "avans": avans,
@@ -191,12 +191,32 @@ if st.button("🧮 Розрахувати", type="primary"):
     st.metric("ОРИГІНАЛ-МАКЕТ, грн", f"{result['oryhinal_maket']:,.2f}".replace(",", " "))
 
     st.divider()
+    st.subheader("Друк (за 1 прим.)")
+
+    block2 = result["block2"]
+    if block2 is None:
+        st.warning(
+            "друк не порахований — для обраної комбінації формат/ефект/наклад "
+            "бракує даних у майстер-таблиці (ціна зошита, обкладинки, зрізу, "
+            "тир або множник 4+4)."
+        )
+    else:
+        print_rows = [
+            {"Стаття": "Блок", "Разом, грн": _fmt(block2["blok"])},
+            {"Стаття": "Обкладинка (друк)", "Разом, грн": _fmt(block2["obkladynka_dr"])},
+            {"Стаття": "Кольоровий зріз", "Разом, грн": _fmt(block2["zriz"])},
+            {"Стаття": "Друк за 1 прим., разом", "Разом, грн": _fmt(block2["razom"])},
+        ]
+        st.table(print_rows)
+        st.caption(
+            f"Сторінок: {block2['storinky']:.1f} · Зошитів: {block2['zoshytiv']} · "
+            f"Тир: {block2['tier']['tier']} (k={block2['tier']['k']}) · "
+            f"K_колір: {block2['k_kolir']}"
+        )
+
+    st.divider()
     st.subheader("РРЦ")
     if result["rrc"] is None:
-        st.warning(
-            "друк ще не порахований — очікує даних від технолога "
-            "(§6, §9.4 драфту: ціни зошита/обкладинки/зрізу, множник 4+4). "
-            "РРЦ: —"
-        )
+        st.warning("РРЦ не порахований — немає друк_за_шт (див. попередження вище). РРЦ: —")
     else:
         st.metric("РРЦ, грн", result["rrc"])

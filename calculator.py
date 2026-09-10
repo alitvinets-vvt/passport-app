@@ -1,16 +1,22 @@
 """
-Розрахунок собівартості й РРЦ Планового Паспорту (крок 4 роадмепу).
+Розрахунок собівартості й РРЦ Планового Паспорту (кроки 4-5 роадмепу).
 
 Джерело правил: Плановий_паспорт_драфт_правил_v0.2.docx, §3-§8.
 
-Реалізовано:
-  Блок 1 (оригінал-макет) — повністю, за §3-§5, §8.
-  Формула РРЦ (§7) — заготовка: працює лише коли відомий друк_за_шт.
+Реалізовано повністю:
+  Блок 1 (оригінал-макет) — §3-§5, §8.
+  Блок 2 (друк) — §6.
+  Формула РРЦ — §7.
 
-Не реалізовано (заплановано на наступний крок, коли технолог заповнить
-плейсхолдери §6/§9.4 у майстер-таблиці):
-  Блок 2 (друк) — calculate() повертає druk_za_sht=None.
+Якщо якогось значення (ціна зошита/обкладинки/зрізу, множник 4+4,
+k_тир) немає в майстер-таблиці для обраної комбінації, друк_за_шт і,
+відповідно, РРЦ повертаються як None замість падіння з помилкою —
+у такому разі UI показує прочерк.
 """
+
+import math
+
+from sheets_reader import get_tier_for_naklad
 
 
 def _to_float(v, default=0.0):
@@ -100,11 +106,77 @@ def _calculate_block1(inputs: dict, params: dict) -> dict:
 
 def _calculate_block2(inputs: dict, params: dict):
     """
-    Друк (§6) — ще НЕ реалізовано: у майстер-таблиці 21 значення (ціни
-    зошита, обкладинки, зрізу, множник 4+4) поки що плейсхолдери від
-    технолога (§9.4). Повертає None, поки вони не заповнені.
+    Друк (§6): блок + обкладинка_др + зріз.
+
+    Повертає None, якщо для обраної комбінації формат/ефект/наклад
+    бракує якогось значення в майстер-таблиці (замість падіння).
     """
-    return None
+    general = params.get("general", {})
+
+    fmt = inputs.get("format")
+    fmt_data = params.get("formats", {}).get(fmt)
+    if not fmt_data:
+        return None
+
+    znakiv_stor = fmt_data.get("znakiv_stor")
+    zoshyt_stor = fmt_data.get("zoshyt")
+    price_zoshyt = fmt_data.get("price_zoshyt")
+    if znakiv_stor is None or zoshyt_stor is None or price_zoshyt is None:
+        return None
+    if znakiv_stor <= 0 or zoshyt_stor <= 0:
+        return None
+
+    zazor = general.get("Зазор сторінковості")
+    if zazor is None:
+        return None
+
+    tier = get_tier_for_naklad(params.get("tiers", []), _to_float(inputs.get("naklad")))
+    k_tyr = tier.get("k") if tier else None
+    if k_tyr is None:
+        return None
+
+    color_mode = inputs.get("color_mode", "")
+    if "4+4" in color_mode:
+        k_kolir = general.get("Множник блоку 4+4")
+        if k_kolir is None:
+            return None
+    else:
+        k_kolir = 1.0
+
+    effect = inputs.get("effect")
+    cena_obkladynky = params.get("cover", {}).get((fmt, effect))
+    if cena_obkladynky is None:
+        return None
+
+    if inputs.get("has_zriz"):
+        cena_zrizu = params.get("zriz", {}).get(fmt)
+        if cena_zrizu is None:
+            return None
+    else:
+        cena_zrizu = 0.0
+
+    znaky_rozrah = _to_float(inputs.get("znaky")) * (
+        _to_float(general.get("Коеф. перекладу"), 1.2)
+        if inputs.get("perekladna")
+        else 1.0
+    )
+
+    storinky = znaky_rozrah / znakiv_stor * (1 + zazor)
+    zoshytiv = math.ceil(storinky / zoshyt_stor)
+    blok = zoshytiv * price_zoshyt * k_tyr * k_kolir
+    obkladynka_dr = cena_obkladynky * k_tyr
+    zriz = cena_zrizu
+
+    return {
+        "storinky": storinky,
+        "zoshytiv": zoshytiv,
+        "tier": tier,
+        "k_kolir": k_kolir,
+        "blok": blok,
+        "obkladynka_dr": obkladynka_dr,
+        "zriz": zriz,
+        "razom": blok + obkladynka_dr + zriz,
+    }
 
 
 def calculate(inputs: dict, params: dict) -> dict:
@@ -113,18 +185,21 @@ def calculate(inputs: dict, params: dict) -> dict:
 
     inputs: словник вхідних даних користувача —
       format, zirka, complexity, perekladna, znaky,
-      oblozhka, efekty, has_zriz, color_mode, naklad, avans.
+      oblozhka, efekty, has_zriz, color_mode, effect, naklad, avans.
     params: результат sheets_reader.load_params().
 
     Повертає:
       znaky_rozrah, rows (розбивка по статтях з податками),
-      inshi, oryhinal_maket, druk_za_sht (None, поки Блок 2 не готовий),
+      inshi, oryhinal_maket,
+      block2 (деталі друку: сторінки/зошитів/блок/обкладинка_др/зріз,
+        None, якщо для обраної комбінації бракує даних),
+      druk_za_sht (= block2["razom"], або None),
       rrc (None, доки druk_za_sht невідомий).
     """
     general = params.get("general", {})
     block1 = _calculate_block1(inputs, params)
-
-    druk_za_sht = _calculate_block2(inputs, params)
+    block2 = _calculate_block2(inputs, params)
+    druk_za_sht = block2["razom"] if block2 else None
 
     naklad = _to_float(inputs.get("naklad"))
     rrc = None
@@ -140,6 +215,7 @@ def calculate(inputs: dict, params: dict) -> dict:
         "rows": block1["rows"],
         "inshi": block1["inshi"],
         "oryhinal_maket": block1["oryhinal_maket"],
+        "block2": block2,
         "druk_za_sht": druk_za_sht,
         "rrc": rrc,
     }
