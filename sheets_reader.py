@@ -132,7 +132,9 @@ def load_params(sheet_id: str, worksheet_name: str = "Тарифи") -> dict:
     client = _get_client()
     sh = client.open_by_key(sheet_id)
     ws = sh.worksheet(worksheet_name)
-    all_values = ws.get_all_values()
+    # UNFORMATTED_VALUE — інакше Sheets API повертає відображуваний текст
+    # ("12%", "2,000"), а не сирі числа (0.12, 2000), і парсинг ламається.
+    all_values = ws.get_all_values(value_render_option="UNFORMATTED_VALUE")
 
     blocks_raw = _split_into_blocks(all_values)
     blocks = {b: _rows_to_dicts(rows) for b, rows in blocks_raw.items()}
