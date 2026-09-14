@@ -141,11 +141,10 @@ st.markdown(
 SHEET_ID = os.environ.get("PASSPORT_SHEET_ID", "")
 params = None
 
-title_col, refresh_col = st.columns([5, 1])
-with title_col:
-    st.title("📖 Плановий Паспорт книжки")
-with refresh_col:
-    if st.button("🔄 Оновити дані з таблиці", help="Скинути кеш і перечитати параметри з Google Sheets"):
+st.title("📖 Плановий Паспорт книжки")
+
+with st.sidebar:
+    if st.button("🔄 Renew", help="Скинути кеш і перечитати параметри з Google Sheets"):
         st.cache_data.clear()
         st.rerun()
 

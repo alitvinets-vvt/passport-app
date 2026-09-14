@@ -68,8 +68,11 @@ def _calculate_block1(inputs: dict, params: dict) -> dict:
     tarif_pereklad = params.get("translation", {}).get(zirka)
     tarif_redaguvannya = params.get("editing", {}).get(complexity)
 
+    # Переклад оплачується за обсягом ОРИГІНАЛУ — без множника 1,2.
+    # Множник застосовується тільки до редагування, коректури й сторінковості,
+    # бо вони працюють з уже перекладеним (розбухлим) текстом.
     pereklad_chysto = (
-        _to_float(tarif_pereklad) * znaky_rozrah / 1000 if perekladna else 0.0
+        _to_float(tarif_pereklad) * znaky / 1000 if perekladna else 0.0
     )
     redaguvannya_chysto = _to_float(tarif_redaguvannya) * znaky_rozrah / 1000
     korektura_chysto = koef_korektura * redaguvannya_chysto

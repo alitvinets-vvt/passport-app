@@ -109,6 +109,61 @@ class CalculateReferenceExampleTest(unittest.TestCase):
         self.assertEqual(self.result["rrc"], 3779)
 
 
+TRANSLATED_INPUTS = {
+    "format": "84х108/32",
+    "zirka": "5★",
+    "complexity": "простий",
+    "perekladna": True,
+    "znaky": 700_000,
+    "oblozhka": 0,
+    "efekty": 0,
+    "color_mode": "1+1 (ч/б)",
+    "effect": "Норма",
+    "has_zriz": False,
+    "naklad": 3100,
+    "avans": 0,
+}
+
+
+class CalculateTranslatedExampleTest(unittest.TestCase):
+    """700 000 знаків / простий / ПЕРЕКЛАДНА / 84х108/32 / ч/б / Норма / T3.
+
+    Переклад рахується від знаки_оригінал (700 000, БЕЗ множника 1,2).
+    Редагування, коректура й сторінковість рахуються від знаки_розрах
+    (700 000 x 1,2 = 840 000, З множником) — див. calculator.py.
+    """
+
+    def setUp(self):
+        self.result = calculate(dict(TRANSLATED_INPUTS), REFERENCE_PARAMS)
+
+    def test_znaky_rozrah(self):
+        self.assertAlmostEqual(self.result["znaky_rozrah"], 840_000.0, places=2)
+
+    def test_block1_rows(self):
+        rows = self.result["rows"]
+        self.assertAlmostEqual(rows["переклад"]["razom"], 113636.36, places=2)
+        self.assertAlmostEqual(rows["редагування"]["razom"], 46581.82, places=2)
+        self.assertAlmostEqual(rows["коректура"]["razom"], 13974.55, places=2)
+        self.assertAlmostEqual(rows["аванс"]["razom"], 0.0, places=2)
+
+    def test_inshi_i_oryhinal_maket(self):
+        self.assertAlmostEqual(self.result["inshi"], 7266.76, places=2)
+        self.assertAlmostEqual(self.result["oryhinal_maket"], 181459.49, places=2)
+
+    def test_block2_druk(self):
+        block2 = self.result["block2"]
+        self.assertIsNotNone(block2)
+        self.assertEqual(block2["zoshytiv"], 21)
+        self.assertEqual(block2["tier"]["tier"], "T3")
+        self.assertAlmostEqual(block2["blok"], 1050.0, places=2)
+        self.assertAlmostEqual(block2["obkladynka_dr"], 50.0, places=2)
+        self.assertAlmostEqual(block2["zriz"], 0.0, places=2)
+        self.assertAlmostEqual(self.result["druk_za_sht"], 1100.0, places=2)
+
+    def test_rrc(self):
+        self.assertEqual(self.result["rrc"], 4519)
+
+
 class RoundTo9Test(unittest.TestCase):
     """Округлення РРЦ — до найближчого числа, що закінчується на 9."""
 
