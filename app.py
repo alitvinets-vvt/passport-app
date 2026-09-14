@@ -5,12 +5,14 @@
 Блок 2 — друк) і РРЦ за §3-§8 драфту v0.2.
 """
 
+import datetime
 import os
 
 from dotenv import load_dotenv
 import streamlit as st
 
 from calculator import calculate
+from export import export_to_xlsx
 from sheets_reader import load_params, get_tier_for_naklad
 
 load_dotenv()
@@ -311,6 +313,10 @@ st.divider()
 # ---- Розрахунок (§4-§8 драфту) — Блок 1 (оригінал-макет) + заготовка РРЦ ----
 st.subheader("Розрахунок собівартості")
 
+def _fmt(v):
+    return f"{v:,.2f}".replace(",", " ")
+
+
 if st.button("🧮 Розрахувати", type="primary"):
     inputs = {
         "format": fmt,
@@ -326,11 +332,14 @@ if st.button("🧮 Розрахувати", type="primary"):
         "naklad": naklad,
         "avans": avans,
     }
-    result = calculate(inputs, params)
-    block2 = result["block2"]
+    st.session_state["passport_inputs"] = inputs
+    st.session_state["passport_result"] = calculate(inputs, params)
 
-    def _fmt(v):
-        return f"{v:,.2f}".replace(",", " ")
+# ---- Результат живе в session_state, щоб пережити rerun від кнопки експорту ----
+if "passport_result" in st.session_state:
+    inputs = st.session_state["passport_inputs"]
+    result = st.session_state["passport_result"]
+    block2 = result["block2"]
 
     # ---- Головні результати: картки-метрики + РРЦ як акцент ----
     m1, m2 = st.columns(2)
@@ -349,6 +358,16 @@ if st.button("🧮 Розрахувати", type="primary"):
             f'<div class="rrc-value">{result["rrc"]} грн</div></div>',
             unsafe_allow_html=True,
         )
+
+    xlsx_buffer = export_to_xlsx(inputs, result)
+    fmt_safe = str(inputs["format"]).replace("/", "-")
+    date_str = datetime.date.today().strftime("%Y%m%d")
+    st.download_button(
+        "📥 Експортувати в xlsx",
+        data=xlsx_buffer,
+        file_name=f"Паспорт_{fmt_safe}_{inputs['naklad']}_{date_str}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
 
     # ---- Деталізація за статтями — для звірки, не для щоденного погляду ----
     with st.expander("🧾 Деталізація розрахунку", expanded=False):
