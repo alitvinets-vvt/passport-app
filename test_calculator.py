@@ -109,6 +109,14 @@ class CalculateReferenceExampleTest(unittest.TestCase):
         self.assertEqual(self.result["rrc"], 3779)
 
 
+TRANSLATED_PARAMS = {
+    **REFERENCE_PARAMS,
+    "general": {
+        **REFERENCE_PARAMS["general"],
+        "Зазор сторінковості": 0.0,
+    },
+}
+
 TRANSLATED_INPUTS = {
     "format": "84х108/32",
     "zirka": "5★",
@@ -131,10 +139,15 @@ class CalculateTranslatedExampleTest(unittest.TestCase):
     Переклад рахується від знаки_оригінал (700 000, БЕЗ множника 1,2).
     Редагування, коректура й сторінковість рахуються від знаки_розрах
     (700 000 x 1,2 = 840 000, З множником) — див. calculator.py.
+
+    Зазор сторінковості = 0 (виправлено в майстер-таблиці; раніше там
+    випадково стояло 1,15%) — окремий TRANSLATED_PARAMS, а не
+    REFERENCE_PARAMS, щоб не зачепити головний контрольний приклад
+    (не перекладний), який навмисно лишається на старому знімку.
     """
 
     def setUp(self):
-        self.result = calculate(dict(TRANSLATED_INPUTS), REFERENCE_PARAMS)
+        self.result = calculate(dict(TRANSLATED_INPUTS), TRANSLATED_PARAMS)
 
     def test_znaky_rozrah(self):
         self.assertAlmostEqual(self.result["znaky_rozrah"], 840_000.0, places=2)
@@ -153,6 +166,7 @@ class CalculateTranslatedExampleTest(unittest.TestCase):
     def test_block2_druk(self):
         block2 = self.result["block2"]
         self.assertIsNotNone(block2)
+        self.assertAlmostEqual(block2["storinky"], 651.16, places=2)
         self.assertEqual(block2["zoshytiv"], 21)
         self.assertEqual(block2["tier"]["tier"], "T3")
         self.assertAlmostEqual(block2["blok"], 1050.0, places=2)
