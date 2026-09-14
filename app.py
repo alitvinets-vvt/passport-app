@@ -70,6 +70,19 @@ st.markdown(
     div[data-baseweb="select"] > div {
         min-height: 2.3rem;
     }
+    div[data-testid="stElementContainer"] {
+        margin-bottom: 0.15rem !important;
+    }
+    [data-testid="stWidgetLabel"] {
+        margin-bottom: 0.1rem !important;
+        padding-bottom: 0 !important;
+    }
+    div[data-testid="stHorizontalBlock"] {
+        gap: 1rem !important;
+    }
+    .stCheckbox {
+        padding-top: 0.15rem !important;
+    }
 
     /* Прибрати +/- степери в number_input — поля займають менше висоти. */
     button[data-testid="stNumberInputStepDown"],
@@ -133,6 +146,30 @@ st.markdown(
         font-size: 3rem;
         line-height: 1.2;
     }
+
+    .detail-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.92rem;
+        margin: 0.3rem 0 0.6rem 0;
+    }
+    .detail-table th {
+        text-align: left;
+        padding: 0.4rem 0.6rem;
+        border-bottom: 2px solid #7A2331;
+        color: #7A2331;
+        font-weight: 600;
+    }
+    .detail-table td {
+        padding: 0.35rem 0.6rem;
+    }
+    .detail-table tbody tr:nth-child(even) {
+        background-color: #F1E9DC;
+    }
+    .detail-table tbody tr.total-row td {
+        font-weight: 700;
+        border-top: 2px solid #7A2331;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -144,7 +181,7 @@ params = None
 st.title("📖 Плановий Паспорт книжки")
 
 with st.sidebar:
-    if st.button("🔄 Renew", help="Скинути кеш і перечитати параметри з Google Sheets"):
+    if st.button("🔄 Оновити дані з таблиці", help="Скинути кеш і перечитати параметри з Google Sheets"):
         st.cache_data.clear()
         st.rerun()
 
@@ -172,27 +209,27 @@ if not isinstance(params, dict):
     st.error("Не вдалося отримати словник параметрів із Google Sheets.")
     st.stop()
 
-# ---- Санітарна панель: що реально прочиталось ----
-with st.expander("🔧 Діагностика читання параметрів", expanded=False):
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Тарифи перекладу", len(params["translation"]))
-    c2.metric("Тарифи редагування", len(params["editing"]))
-    c3.metric("Формати", len(params["formats"]))
-    c1.metric("Ефекти обкладинки", len(params["cover"]))
-    c2.metric("Тири накладу", len(params["tiers"]))
-    c3.metric("Загальні коефіцієнти", len(params["general"]))
+# ---- Санітарна панель: що реально прочиталось — у sidebar, унизу, згорнута ----
+with st.sidebar:
+    st.divider()
+    with st.expander("Стан даних", expanded=False):
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Тарифи перекладу", len(params["translation"]))
+        c2.metric("Тарифи редагування", len(params["editing"]))
+        c3.metric("Формати", len(params["formats"]))
+        c1.metric("Ефекти обкладинки", len(params["cover"]))
+        c2.metric("Тири накладу", len(params["tiers"]))
+        c3.metric("Загальні коефіцієнти", len(params["general"]))
 
-    if params["missing"]:
-        st.warning(
-            f"⚠️ Ще не заповнено {len(params['missing'])} значень "
-            f"(жовті клітинки — очікують чисел від технолога):"
-        )
-        for block, key in params["missing"]:
-            st.write(f"— {block}: **{key}**")
-    else:
-        st.success("Усі параметри заповнені.")
-
-st.divider()
+        if params["missing"]:
+            st.warning(
+                f"⚠️ Ще не заповнено {len(params['missing'])} значень "
+                f"(жовті клітинки — очікують чисел від технолога):"
+            )
+            for block, key in params["missing"]:
+                st.write(f"— {block}: **{key}**")
+        else:
+            st.success("Усі параметри заповнені.")
 
 # ---- Форма вводу (§2 драфту v0.2) — поки без розрахунку ----
 st.subheader("Вхідні параметри книжки")
@@ -211,12 +248,14 @@ with col2:
     color_mode = st.selectbox("Колірність блоку", ["1+1 (ч/б)", "4+4 (повний колір)"])
     effect = st.selectbox("Ефекти обкладинки", ["Норма", "Бонус", "Преміум"])
     has_zriz = st.checkbox("Кольоровий зріз")
-    st.caption("Суми нижче узгоджені вручну (поки без тарифів у таблиці).")
+    _suma_help = "Сума узгоджена вручну (поки без тарифів у таблиці)."
     oblozhka_suma = st.number_input(
-        "Обкладинка (дизайн), грн чистими", min_value=0, value=0, step=100
+        "Обкладинка (дизайн), грн чистими", min_value=0, value=0, step=100,
+        help=_suma_help,
     )
     efekty_suma = st.number_input(
-        "Ефекти обкладинки, грн чистими", min_value=0, value=0, step=100
+        "Ефекти обкладинки, грн чистими", min_value=0, value=0, step=100,
+        help=_suma_help,
     )
 
 col_naklad, col_avans = st.columns(2)
@@ -229,6 +268,24 @@ def _display_value(value, suffix=""):
     if value is None:
         return "—" + suffix
     return f"{value}{suffix}"
+
+
+def _render_table(rows, total_labels=()):
+    """Zebra-таблиця з підсумковими рядками жирним (замість st.table)."""
+    if not rows:
+        return
+    columns = list(rows[0].keys())
+    header = "".join(f"<th>{c}</th>" for c in columns)
+    body = []
+    for row in rows:
+        cls = ' class="total-row"' if row.get("Стаття") in total_labels else ""
+        cells = "".join(f"<td>{row[c]}</td>" for c in columns)
+        body.append(f"<tr{cls}>{cells}</tr>")
+    st.markdown(
+        f'<table class="detail-table"><thead><tr>{header}</tr></thead>'
+        f'<tbody>{"".join(body)}</tbody></table>',
+        unsafe_allow_html=True,
+    )
 
 
 # ---- Показ підтягнутих значень для обраної комбінації (перевірка look-up'ів) ----
@@ -329,7 +386,7 @@ if st.button("🧮 Розрахувати", type="primary"):
                 "Разом, грн": _fmt(result["inshi"]),
             }
         )
-        st.table(table_rows)
+        _render_table(table_rows, total_labels={"Інші витрати (12%)"})
 
         st.markdown("**Друк (за 1 прим.)**")
         if block2 is None:
@@ -341,7 +398,7 @@ if st.button("🧮 Розрахувати", type="primary"):
                 {"Стаття": "Кольоровий зріз", "Разом, грн": _fmt(block2["zriz"])},
                 {"Стаття": "Друк за 1 прим., разом", "Разом, грн": _fmt(block2["razom"])},
             ]
-            st.table(print_rows)
+            _render_table(print_rows, total_labels={"Друк за 1 прим., разом"})
             st.caption(
                 f"Сторінок: {block2['storinky']:.1f} · Зошитів: {block2['zoshytiv']} · "
                 f"Тир: {block2['tier']['tier']} (k={block2['tier']['k']}) · "
