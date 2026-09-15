@@ -244,12 +244,6 @@ with col1:
     complexity = st.selectbox("Складність", options=list(params["editing"].keys()) or ["—"])
     znaky = st.number_input("Кількість знаків (оригінал)", min_value=0, value=700_000, step=10_000)
     is_translated = st.checkbox("Перекладна книга")
-
-with col2:
-    st.markdown('<p class="form-group-title">Друк та оформлення</p>', unsafe_allow_html=True)
-    color_mode = st.selectbox("Колірність блоку", ["1+1 (ч/б)", "4+4 (повний колір)"])
-    effect = st.selectbox("Ефекти обкладинки", ["Норма", "Бонус", "Преміум"])
-    has_zriz = st.checkbox("Кольоровий зріз")
     storinkovist_multiplier = st.number_input(
         "Множник сторінковості", min_value=1.0, value=1.0, step=0.05,
         help=(
@@ -258,6 +252,12 @@ with col2:
             "об'ємнішим (наприклад, 1,2 = +20% сторінок)."
         ),
     )
+
+with col2:
+    st.markdown('<p class="form-group-title">Друк та оформлення</p>', unsafe_allow_html=True)
+    color_mode = st.selectbox("Колірність блоку", ["1+1 (ч/б)", "4+4 (повний колір)"])
+    effect = st.selectbox("Ефекти обкладинки", ["Норма", "Бонус", "Преміум"])
+    has_zriz = st.checkbox("Кольоровий зріз")
     _suma_help = "Сума узгоджена вручну (поки без тарифів у таблиці)."
     oblozhka_suma = st.number_input(
         "Обкладинка (дизайн), грн чистими", min_value=0, value=0, step=100,
@@ -267,12 +267,9 @@ with col2:
         "Ефекти обкладинки, грн чистими", min_value=0, value=0, step=100,
         help=_suma_help,
     )
-
-col_naklad, col_avans = st.columns(2)
-with col_naklad:
     naklad = st.number_input("Наклад", min_value=100, value=3100, step=100)
-with col_avans:
-    avans = st.number_input("Аванс за текст, грн", min_value=0, value=0, step=1000)
+
+avans = st.number_input("Аванс за текст, грн", min_value=0, value=0, step=1000)
 
 def _display_value(value, suffix=""):
     if value is None:
