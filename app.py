@@ -433,13 +433,22 @@ if "passport_result" in st.session_state:
         table_rows.append(
             {
                 "Стаття": "Інші витрати (12%)",
-                "Чистими, грн": "—",
-                "Тіло, грн": "—",
-                "ЄСВ, грн": "—",
+                "Чистими, грн": _fmt(0),
+                "Тіло, грн": _fmt(0),
+                "ЄСВ, грн": _fmt(0),
                 "Разом, грн": _fmt(result["inshi"]),
             }
         )
-        _render_table(table_rows, total_labels={"Інші витрати (12%)"})
+        table_rows.append(
+            {
+                "Стаття": "Разом",
+                "Чистими, грн": _fmt(sum(r["chysto"] for r in result["rows"].values())),
+                "Тіло, грн": _fmt(sum(r["tilo"] for r in result["rows"].values())),
+                "ЄСВ, грн": _fmt(sum(r["esv"] for r in result["rows"].values())),
+                "Разом, грн": _fmt(result["oryhinal_maket"]),
+            }
+        )
+        _render_table(table_rows, total_labels={"Разом"})
 
         st.markdown("**Друк (за 1 прим.)**")
         if block2 is None:
