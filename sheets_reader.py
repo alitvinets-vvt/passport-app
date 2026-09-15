@@ -125,7 +125,8 @@ def load_params(sheet_id: str, worksheet_name: str = "Тарифи") -> dict:
       formats:      {format: {znakiv_stor, zoshyt, price_zoshyt}}
       zriz:         {format: price}
       cover:        {(format, effect): price}
-      tiers:        [{"tier","lo","band","k"}, ...]   відсортовано за lo
+      tiers:        [{"tier","lo","band","k","anchor"}, ...]  відсортовано за lo
+                    ("anchor" — опційна колонка "Якір", None якщо немає)
       general:      {parametr: value}
       missing:      список (блок, ключ) із порожніми "жовтими" значеннями — ще не заповнено
     """
@@ -205,6 +206,10 @@ def load_params(sheet_id: str, worksheet_name: str = "Тарифи") -> dict:
             "lo": _to_float(r.get("Нижня межа"), 0),
             "band": r.get("Смуга", "").strip(),
             "k": _to_float(r.get("k")),
+            # Опційна колонка — репрезентативний наклад для фічі
+            # "Порівняння накладів". None, якщо колонки немає в таблиці
+            # або клітинка порожня (тоді UI бере нижню межу + відступ).
+            "anchor": _to_float(r.get("Якір")),
         })
     tiers.sort(key=lambda t: t["lo"] or 0)
 

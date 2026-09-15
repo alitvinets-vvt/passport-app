@@ -226,3 +226,41 @@ def calculate(inputs: dict, params: dict) -> dict:
         "druk_za_sht": druk_za_sht,
         "rrc": rrc,
     }
+
+
+def default_naklady(tiers: list) -> list:
+    """Один репрезентативний наклад на кожен тир — стартовий список для
+    фічі "Порівняння накладів" (UI будує з нього редаговану таблицю).
+
+    Якір з майстер-таблиці (колонка "Якір" у блоці ТИРИ), якщо є для
+    тиру, інакше нижня межа тиру + невеликий відступ — щоб гарантовано
+    потрапити в межі смуги, а не впертись у сусідню знизу."""
+    result = []
+    for t in tiers:
+        anchor = t.get("anchor")
+        if anchor is None:
+            anchor = (t.get("lo") or 0) + 100
+        result.append(anchor)
+    return result
+
+
+def compare_naklady(inputs: dict, params: dict, naklady: list) -> list:
+    """Рахує наявну calculate() окремо для кожного накладу зі списку
+    `naklady`, лишаючи решту `inputs` незмінними — не нова логіка
+    розрахунку, тільки виклик calculate() N разів і збір результатів
+    для таблиці порівняння накладів в UI.
+
+    Повертає список у тому самому порядку, що й `naklady`:
+      [{"naklad": ..., "tier": {...} чи None, "result": calculate(...)}, ...]
+    """
+    rows = []
+    for naklad in naklady:
+        row_inputs = {**inputs, "naklad": naklad}
+        result = calculate(row_inputs, params)
+        tier = (
+            result["block2"]["tier"]
+            if result["block2"]
+            else get_tier_for_naklad(params.get("tiers", []), naklad)
+        )
+        rows.append({"naklad": naklad, "tier": tier, "result": result})
+    return rows

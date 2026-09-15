@@ -19,7 +19,7 @@ Google Sheets: params — статичний фікстур, щоб резуль
 
 import unittest
 
-from calculator import calculate
+from calculator import calculate, compare_naklady, default_naklady
 
 REFERENCE_PARAMS = {
     "translation": {"5★": 125.0, "4★": 120.0, "3★": 105.0, "2★": 120.0, "1★": 90.0},
@@ -224,6 +224,50 @@ class CalculateStorinkovistMultiplierTest(unittest.TestCase):
 
     def test_rrc(self):
         self.assertEqual(self.result["rrc"], 4359)
+
+
+class CompareNakladyTest(unittest.TestCase):
+    """Фіча "Порівняння накладів" — default_naklady()/compare_naklady().
+
+    default_naklady() бере по одному репрезентативному накладу на кожен
+    тир із params["tiers"] (нижня межа + 100, бо REFERENCE_PARAMS не
+    задає колонку "Якір"): [100, 2100, 3100, 5100, 7100] для 5 тирів.
+    Наклад для T3 (3000 + 100 = 3100) навмисно збігається з накладом
+    основного контрольного прикладу (CalculateReferenceExampleTest) —
+    це не збіг, а перевірка, що compare_naklady() відтворює той самий
+    результат через звичайний виклик calculate() у циклі.
+    """
+
+    def setUp(self):
+        self.naklady = default_naklady(REFERENCE_PARAMS["tiers"])
+        self.rows = compare_naklady(
+            dict(REFERENCE_INPUTS), REFERENCE_PARAMS, sorted(self.naklady)
+        )
+
+    def test_default_naklady_count_matches_tiers(self):
+        self.assertEqual(len(self.naklady), len(REFERENCE_PARAMS["tiers"]))
+        self.assertEqual(self.naklady, [100, 2100.0, 3100.0, 5100.0, 7100.0])
+
+    def test_naklad_3100_matches_single_calculate_reference(self):
+        row = next(r for r in self.rows if r["naklad"] == 3100.0)
+        result = row["result"]
+        self.assertEqual(row["tier"]["tier"], "T3")
+        self.assertAlmostEqual(result["oryhinal_maket"], 56519.27, places=2)
+        self.assertAlmostEqual(result["druk_za_sht"], 950.0, places=2)
+        self.assertEqual(result["rrc"], 3779)
+
+    def test_rrc_non_increasing_as_naklad_grows(self):
+        rrcs = [r["result"]["rrc"] for r in self.rows]
+        self.assertTrue(all(v is not None for v in rrcs))
+        for earlier, later in zip(rrcs, rrcs[1:]):
+            self.assertGreaterEqual(
+                earlier, later,
+                f"РРЦ не повинен зростати зі збільшенням накладу: {rrcs}",
+            )
+
+    def test_oryhinal_maket_independent_of_naklad(self):
+        oms = {r["result"]["oryhinal_maket"] for r in self.rows}
+        self.assertEqual(len(oms), 1)
 
 
 class RoundTo9Test(unittest.TestCase):

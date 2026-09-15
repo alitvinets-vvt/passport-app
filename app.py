@@ -10,9 +10,10 @@ import os
 import re
 
 from dotenv import load_dotenv
+import pandas as pd
 import streamlit as st
 
-from calculator import calculate
+from calculator import calculate, compare_naklady, default_naklady
 from export import export_to_xlsx
 from sheets_reader import load_params, get_tier_for_naklad
 
@@ -215,6 +216,28 @@ st.markdown(
         font-weight: 700;
         border-top: 2px solid #7A2331;
     }
+
+    /* Таблиця "Порівняння накладів" — колонка на кожен наклад, під
+       числом накладу в шапці дрібна підказка з тиром/смугою. */
+    .comparison-table th {
+        text-align: right;
+        white-space: nowrap;
+    }
+    .comparison-table th:first-child,
+    .comparison-table td:first-child {
+        text-align: left;
+    }
+    .comparison-table td {
+        text-align: right;
+    }
+    .comparison-band {
+        display: block;
+        font-size: 0.75rem;
+        font-weight: 400;
+        text-transform: none;
+        color: #8a7f6d;
+        letter-spacing: 0;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -368,6 +391,67 @@ def _render_table(rows, total_labels=()):
     )
 
 
+def _render_comparison_table(rows):
+    """Таблиця "Порівняння накладів": РЯДКИ = показники, КОЛОНКИ = наклади
+    (кожен рядок з rows — один виклик calculate() із compare_naklady())."""
+    if not rows:
+        return
+
+    def _om_per_unit(r):
+        return r["result"]["oryhinal_maket"] / r["naklad"] if r["naklad"] else None
+
+    def _sobivartist(r):
+        druk = r["result"]["druk_za_sht"]
+        om_unit = _om_per_unit(r)
+        if druk is None or om_unit is None:
+            return None
+        return om_unit + druk
+
+    headers = []
+    for r in rows:
+        band = r["tier"]["band"] if r["tier"] else "—"
+        naklad_label = f"{int(r['naklad']):,}".replace(",", " ")
+        headers.append(f"{naklad_label}<br><span class='comparison-band'>{band}</span>")
+
+    metric_rows = [
+        ("Наклад", lambda r: f"{int(r['naklad']):,}".replace(",", " "), False),
+        ("Тир", lambda r: r["tier"]["tier"] if r["tier"] else "—", False),
+        (
+            "ОРИГІНАЛ-МАКЕТ на 1 прим., грн",
+            lambda r: _fmt(_om_per_unit(r)) if _om_per_unit(r) is not None else "—",
+            False,
+        ),
+        (
+            "Друк за 1 прим., грн",
+            lambda r: _fmt(r["result"]["druk_za_sht"]) if r["result"]["druk_za_sht"] is not None else "—",
+            False,
+        ),
+        (
+            "Собівартість 1 прим., грн",
+            lambda r: _fmt(_sobivartist(r)) if _sobivartist(r) is not None else "—",
+            False,
+        ),
+        (
+            "РРЦ, грн",
+            lambda r: str(r["result"]["rrc"]) if r["result"]["rrc"] is not None else "—",
+            True,
+        ),
+    ]
+
+    header_html = "<th>Показник</th>" + "".join(f"<th>{h}</th>" for h in headers)
+    body = []
+    for label, fn, is_total in metric_rows:
+        cls = ' class="total-row"' if is_total else ""
+        cells = "".join(f"<td>{fn(r)}</td>" for r in rows)
+        body.append(f"<tr{cls}><td>{label}</td>{cells}</tr>")
+
+    st.markdown(
+        f'<table class="detail-table comparison-table"><thead><tr>{header_html}</tr></thead>'
+        f'<tbody>{"".join(body)}</tbody></table>',
+        unsafe_allow_html=True,
+    )
+
+
 # ---- Показ підтягнутих значень для обраної комбінації (перевірка look-up'ів) ----
 # Службовий блок, як і "Діагностика" вище — згорнутий, щоб уся форма
 # вводу + кнопка вміщались на одному екрані.
@@ -395,136 +479,173 @@ def _fmt(v):
     return f"{v:,.2f}".replace(",", " ")
 
 
-if st.button("🧮 Розрахувати", type="primary"):
-    inputs = {
-        "format": fmt,
-        "zirka": zirka,
-        "complexity": complexity,
-        "perekladna": is_translated,
-        "znaky": znaky,
-        "oblozhka": oblozhka_suma,
-        "efekty": efekty_suma,
-        "color_mode": color_mode,
-        "effect": effect,
-        "has_zriz": has_zriz,
-        "naklad": naklad,
-        "avans": avans,
-        "storinkovist_multiplier": storinkovist_multiplier,
-    }
-    st.session_state["passport_inputs"] = inputs
-    st.session_state["passport_result"] = calculate(inputs, params)
+# Параметри книги без накладу — спільні для одиночного розрахунку й
+# порівняння накладів (щоб не вводити книжку двічі).
+book_inputs = {
+    "format": fmt,
+    "zirka": zirka,
+    "complexity": complexity,
+    "perekladna": is_translated,
+    "znaky": znaky,
+    "oblozhka": oblozhka_suma,
+    "efekty": efekty_suma,
+    "color_mode": color_mode,
+    "effect": effect,
+    "has_zriz": has_zriz,
+    "avans": avans,
+    "storinkovist_multiplier": storinkovist_multiplier,
+}
 
-# ---- Результат живе в session_state, щоб пережити rerun від кнопки експорту ----
-if "passport_result" in st.session_state:
-    inputs = st.session_state["passport_inputs"]
-    result = st.session_state["passport_result"]
-    block2 = result["block2"]
+tab_single, tab_compare = st.tabs(["🧮 Одиночний розрахунок", "📊 Порівняння накладів"])
 
-    # ---- Головні результати: картки-метрики + РРЦ як акцент ----
-    m1, m2 = st.columns(2)
-    m1.metric("ОРИГІНАЛ-МАКЕТ, грн", _fmt(result["oryhinal_maket"]))
-    m2.metric("Друк за 1 прим., грн", _fmt(block2["razom"]) if block2 else "—")
+with tab_single:
+    if st.button("🧮 Розрахувати", type="primary"):
+        inputs = {**book_inputs, "naklad": naklad}
+        st.session_state["passport_inputs"] = inputs
+        st.session_state["passport_result"] = calculate(inputs, params)
 
-    if result["rrc"] is None:
-        st.warning(
-            "РРЦ не порахований — для обраної комбінації формат/ефект/наклад "
-            "бракує даних у майстер-таблиці (ціна зошита, обкладинки, зрізу, "
-            "тир або множник 4+4)."
-        )
-    else:
-        st.markdown(
-            f'<div class="rrc-hero"><div class="rrc-label">РРЦ</div>'
-            f'<div class="rrc-value">{result["rrc"]} грн</div></div>',
-            unsafe_allow_html=True,
-        )
+    # ---- Результат живе в session_state, щоб пережити rerun від кнопки експорту ----
+    if "passport_result" in st.session_state:
+        inputs = st.session_state["passport_inputs"]
+        result = st.session_state["passport_result"]
+        block2 = result["block2"]
 
-    project_ready = bool(project_index.strip()) and bool(project_name.strip())
-    if not project_ready:
-        st.warning("Заповніть індекс і назву проєкту перед експортом.")
+        # ---- Головні результати: картки-метрики + РРЦ як акцент ----
+        m1, m2 = st.columns(2)
+        m1.metric("ОРИГІНАЛ-МАКЕТ, грн", _fmt(result["oryhinal_maket"]))
+        m2.metric("Друк за 1 прим., грн", _fmt(block2["razom"]) if block2 else "—")
 
-    export_inputs = {
-        **inputs,
-        "project_index": project_index.strip(),
-        "project_name": project_name.strip(),
-    }
-    xlsx_buffer = export_to_xlsx(export_inputs, result) if project_ready else None
-    date_str = datetime.date.today().strftime("%Y%m%d")
-    if project_ready:
-        file_name = (
-            f"{_sanitize_filename_part(project_index)}_"
-            f"{_sanitize_filename_part(project_name)}_"
-            f"Плановий_паспорт_{date_str}.xlsx"
-        )
-    else:
-        file_name = f"Плановий_паспорт_{date_str}.xlsx"
-    st.download_button(
-        "📥 Експортувати в xlsx",
-        data=xlsx_buffer if project_ready else b"",
-        file_name=file_name,
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        disabled=not project_ready,
-    )
+        if result["rrc"] is None:
+            st.warning(
+                "РРЦ не порахований — для обраної комбінації формат/ефект/наклад "
+                "бракує даних у майстер-таблиці (ціна зошита, обкладинки, зрізу, "
+                "тир або множник 4+4)."
+            )
+        else:
+            st.markdown(
+                f'<div class="rrc-hero"><div class="rrc-label">РРЦ</div>'
+                f'<div class="rrc-value">{result["rrc"]} грн</div></div>',
+                unsafe_allow_html=True,
+            )
 
-    # ---- Деталізація за статтями — для звірки, не для щоденного погляду ----
-    with st.expander("🧾 Деталізація розрахунку", expanded=False):
-        st.write(
-            f"**Знаків до розрахунку (з коеф. перекладу):** "
-            f"{result['znaky_rozrah']:,.0f}".replace(",", " ")
-        )
+        project_ready = bool(project_index.strip()) and bool(project_name.strip())
+        if not project_ready:
+            st.warning("Заповніть індекс і назву проєкту перед експортом.")
 
-        row_labels = {
-            "аванс": "Аванс за текст (АЛД)",
-            "переклад": "Переклад (АЛД)",
-            "редагування": "Редагування (ДП)",
-            "коректура": "Коректура (ДП)",
-            "обкладинка": "Обкладинка, дизайн (ДП)",
-            "ефекти": "Ефекти обкладинки (ДП)",
+        export_inputs = {
+            **inputs,
+            "project_index": project_index.strip(),
+            "project_name": project_name.strip(),
         }
-        table_rows = []
-        for key, label in row_labels.items():
-            row = result["rows"][key]
+        xlsx_buffer = export_to_xlsx(export_inputs, result) if project_ready else None
+        date_str = datetime.date.today().strftime("%Y%m%d")
+        if project_ready:
+            file_name = (
+                f"{_sanitize_filename_part(project_index)}_"
+                f"{_sanitize_filename_part(project_name)}_"
+                f"Плановий_паспорт_{date_str}.xlsx"
+            )
+        else:
+            file_name = f"Плановий_паспорт_{date_str}.xlsx"
+        st.download_button(
+            "📥 Експортувати в xlsx",
+            data=xlsx_buffer if project_ready else b"",
+            file_name=file_name,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            disabled=not project_ready,
+        )
+
+        # ---- Деталізація за статтями — для звірки, не для щоденного погляду ----
+        with st.expander("🧾 Деталізація розрахунку", expanded=False):
+            st.write(
+                f"**Знаків до розрахунку (з коеф. перекладу):** "
+                f"{result['znaky_rozrah']:,.0f}".replace(",", " ")
+            )
+
+            row_labels = {
+                "аванс": "Аванс за текст (АЛД)",
+                "переклад": "Переклад (АЛД)",
+                "редагування": "Редагування (ДП)",
+                "коректура": "Коректура (ДП)",
+                "обкладинка": "Обкладинка, дизайн (ДП)",
+                "ефекти": "Ефекти обкладинки (ДП)",
+            }
+            table_rows = []
+            for key, label in row_labels.items():
+                row = result["rows"][key]
+                table_rows.append(
+                    {
+                        "Стаття": label,
+                        "Чистими, грн": _fmt(row["chysto"]),
+                        "Тіло, грн": _fmt(row["tilo"]),
+                        "ЄСВ, грн": _fmt(row["esv"]),
+                        "Разом, грн": _fmt(row["razom"]),
+                    }
+                )
             table_rows.append(
                 {
-                    "Стаття": label,
-                    "Чистими, грн": _fmt(row["chysto"]),
-                    "Тіло, грн": _fmt(row["tilo"]),
-                    "ЄСВ, грн": _fmt(row["esv"]),
-                    "Разом, грн": _fmt(row["razom"]),
+                    "Стаття": "Інші витрати (12%)",
+                    "Чистими, грн": _fmt(0),
+                    "Тіло, грн": _fmt(0),
+                    "ЄСВ, грн": _fmt(0),
+                    "Разом, грн": _fmt(result["inshi"]),
                 }
             )
-        table_rows.append(
-            {
-                "Стаття": "Інші витрати (12%)",
-                "Чистими, грн": _fmt(0),
-                "Тіло, грн": _fmt(0),
-                "ЄСВ, грн": _fmt(0),
-                "Разом, грн": _fmt(result["inshi"]),
-            }
-        )
-        table_rows.append(
-            {
-                "Стаття": "Разом",
-                "Чистими, грн": _fmt(sum(r["chysto"] for r in result["rows"].values())),
-                "Тіло, грн": _fmt(sum(r["tilo"] for r in result["rows"].values())),
-                "ЄСВ, грн": _fmt(sum(r["esv"] for r in result["rows"].values())),
-                "Разом, грн": _fmt(result["oryhinal_maket"]),
-            }
-        )
-        _render_table(table_rows, total_labels={"Разом"})
-
-        st.markdown("**Друк (за 1 прим.)**")
-        if block2 is None:
-            st.caption("Друк не порахований — див. попередження вище.")
-        else:
-            print_rows = [
-                {"Стаття": "Блок", "Разом, грн": _fmt(block2["blok"])},
-                {"Стаття": "Обкладинка (друк)", "Разом, грн": _fmt(block2["obkladynka_dr"])},
-                {"Стаття": "Кольоровий зріз", "Разом, грн": _fmt(block2["zriz"])},
-                {"Стаття": "Друк за 1 прим., разом", "Разом, грн": _fmt(block2["razom"])},
-            ]
-            _render_table(print_rows, total_labels={"Друк за 1 прим., разом"})
-            st.caption(
-                f"Сторінок: {block2['storinky']:.1f} · Зошитів: {block2['zoshytiv']} · "
-                f"Тир: {block2['tier']['tier']} (k={block2['tier']['k']}) · "
-                f"K_колір: {block2['k_kolir']}"
+            table_rows.append(
+                {
+                    "Стаття": "Разом",
+                    "Чистими, грн": _fmt(sum(r["chysto"] for r in result["rows"].values())),
+                    "Тіло, грн": _fmt(sum(r["tilo"] for r in result["rows"].values())),
+                    "ЄСВ, грн": _fmt(sum(r["esv"] for r in result["rows"].values())),
+                    "Разом, грн": _fmt(result["oryhinal_maket"]),
+                }
             )
+            _render_table(table_rows, total_labels={"Разом"})
+
+            st.markdown("**Друк (за 1 прим.)**")
+            if block2 is None:
+                st.caption("Друк не порахований — див. попередження вище.")
+            else:
+                print_rows = [
+                    {"Стаття": "Блок", "Разом, грн": _fmt(block2["blok"])},
+                    {"Стаття": "Обкладинка (друк)", "Разом, грн": _fmt(block2["obkladynka_dr"])},
+                    {"Стаття": "Кольоровий зріз", "Разом, грн": _fmt(block2["zriz"])},
+                    {"Стаття": "Друк за 1 прим., разом", "Разом, грн": _fmt(block2["razom"])},
+                ]
+                _render_table(print_rows, total_labels={"Друк за 1 прим., разом"})
+                st.caption(
+                    f"Сторінок: {block2['storinky']:.1f} · Зошитів: {block2['zoshytiv']} · "
+                    f"Тир: {block2['tier']['tier']} (k={block2['tier']['k']}) · "
+                    f"K_колір: {block2['k_kolir']}"
+                )
+
+with tab_compare:
+    st.caption(
+        "Ті самі параметри книги — собівартість і РРЦ одразу на кількох "
+        "накладах, по одному репрезентативному на кожен тир. Список можна "
+        "редагувати: додавайте чи прибирайте рядки."
+    )
+    naklad_editor_df = pd.DataFrame({"Наклад": default_naklady(params["tiers"])})
+    edited_naklady_df = st.data_editor(
+        naklad_editor_df,
+        num_rows="dynamic",
+        hide_index=True,
+        width="stretch",
+        column_config={
+            "Наклад": st.column_config.NumberColumn("Наклад", min_value=1, step=100)
+        },
+        key="naklad_compare_editor",
+    )
+
+    if st.button("📊 Порівняти", type="primary"):
+        naklad_list = sorted(
+            {float(n) for n in edited_naklady_df["Наклад"].dropna().tolist() if n and n > 0}
+        )
+        if not naklad_list:
+            st.warning("Додайте хоча б один наклад для порівняння.")
+            st.session_state.pop("comparison_rows", None)
+        else:
+            st.session_state["comparison_rows"] = compare_naklady(book_inputs, params, naklad_list)
+
+    if "comparison_rows" in st.session_state:
+        _render_comparison_table(st.session_state["comparison_rows"])
