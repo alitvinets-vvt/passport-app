@@ -136,6 +136,18 @@ st.markdown(
         color: #7A2331;
     }
 
+    /* Компактний список у sidebar-панелі "Стан даних" — вузька колонка,
+       тому звичайний текстовий рядок замість st.metric (обрізало назви). */
+    .sidebar-stat-row {
+        font-size: 0.85rem;
+        color: #241A17;
+        padding: 0.1rem 0;
+    }
+    .sidebar-stat-row b {
+        color: #7A2331;
+        font-weight: 700;
+    }
+
     .stButton > button[kind="primary"] {
         background-color: #7A2331;
         border-color: #7A2331;
@@ -236,13 +248,21 @@ if not isinstance(params, dict):
 with st.sidebar:
     st.divider()
     with st.expander("Стан даних", expanded=False):
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Тарифи перекладу", len(params["translation"]))
-        c2.metric("Тарифи редагування", len(params["editing"]))
-        c3.metric("Формати", len(params["formats"]))
-        c1.metric("Ефекти обкладинки", len(params["cover"]))
-        c2.metric("Тири накладу", len(params["tiers"]))
-        c3.metric("Загальні коефіцієнти", len(params["general"]))
+        data_counts = [
+            ("Тарифи перекладу", len(params["translation"])),
+            ("Тарифи редагування", len(params["editing"])),
+            ("Формати", len(params["formats"])),
+            ("Ефекти обкладинки", len(params["cover"])),
+            ("Тири накладу", len(params["tiers"])),
+            ("Загальні коефіцієнти", len(params["general"])),
+        ]
+        st.markdown(
+            "".join(
+                f'<div class="sidebar-stat-row">{label}: <b>{count}</b></div>'
+                for label, count in data_counts
+            ),
+            unsafe_allow_html=True,
+        )
 
         if params["missing"]:
             st.warning(
