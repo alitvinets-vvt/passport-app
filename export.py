@@ -46,14 +46,26 @@ def _display(value, suffix=""):
 
 
 def export_to_xlsx(inputs: dict, result: dict) -> io.BytesIO:
-    """Формує xlsx з трьома секціями: параметри книги, редакційні
-    витрати (Блок 1) і друк + підсумок (Блок 2 + РРЦ) — на одному
-    аркуші, значення 1:1 з того, що показано в UI."""
+    """Формує xlsx: шапка (індекс/назва проєкту) і три секції —
+    параметри книги, редакційні витрати (Блок 1) і друк + підсумок
+    (Блок 2 + РРЦ) — на одному аркуші, значення 1:1 з того, що
+    показано в UI.
+
+    inputs["project_index"]/["project_name"] — ручна ідентифікація
+    проєкту для файлу експорту, не бере участі в calculate()."""
     wb = Workbook()
     ws = wb.active
     ws.title = "Плановий Паспорт"
 
     row = 1
+
+    # ---- Шапка: ідентифікація проєкту ----
+    ws.cell(row=row, column=1, value="Індекс проєкту:")
+    ws.cell(row=row, column=2, value=inputs.get("project_index", ""))
+    row += 1
+    ws.cell(row=row, column=1, value="Назва проєкту:")
+    ws.cell(row=row, column=2, value=inputs.get("project_name", ""))
+    row += 2
 
     # ---- Секція 1: Параметри книги ----
     row = _write_section_title(ws, row, "Параметри книги")

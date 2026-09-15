@@ -7,6 +7,7 @@
 
 import datetime
 import os
+import re
 
 from dotenv import load_dotenv
 import streamlit as st
@@ -277,6 +278,13 @@ with st.sidebar:
 # ---- Форма вводу (§2 драфту v0.2) — поки без розрахунку ----
 st.subheader("Вхідні параметри книжки")
 
+st.markdown('<p class="form-group-title">Ідентифікація проєкту</p>', unsafe_allow_html=True)
+proj_col1, proj_col2 = st.columns(2)
+with proj_col1:
+    project_index = st.text_input("Індекс проєкту")
+with proj_col2:
+    project_name = st.text_input("Назва проєкту")
+
 col1, col2 = st.columns(2)
 with col1:
     st.markdown('<p class="form-group-title">Текст книги</p>', unsafe_allow_html=True)
@@ -323,6 +331,14 @@ def _display_value(value, suffix=""):
     if value is None:
         return "—" + suffix
     return f"{value}{suffix}"
+
+
+_INVALID_FILENAME_CHARS = re.compile(r'[\\/:*?"<>|]')
+
+
+def _sanitize_filename_part(s: str) -> str:
+    """Прибирає символи, недопустимі в назві файлу (Windows-обмеження)."""
+    return _INVALID_FILENAME_CHARS.sub("_", s.strip())
 
 
 def _render_table(rows, total_labels=()):
@@ -413,14 +429,31 @@ if "passport_result" in st.session_state:
             unsafe_allow_html=True,
         )
 
-    xlsx_buffer = export_to_xlsx(inputs, result)
-    fmt_safe = str(inputs["format"]).replace("/", "-")
+    project_ready = bool(project_index.strip()) and bool(project_name.strip())
+    if not project_ready:
+        st.warning("Заповніть індекс і назву проєкту перед експортом.")
+
+    export_inputs = {
+        **inputs,
+        "project_index": project_index.strip(),
+        "project_name": project_name.strip(),
+    }
+    xlsx_buffer = export_to_xlsx(export_inputs, result) if project_ready else None
     date_str = datetime.date.today().strftime("%Y%m%d")
+    if project_ready:
+        file_name = (
+            f"{_sanitize_filename_part(project_index)}_"
+            f"{_sanitize_filename_part(project_name)}_"
+            f"Плановий_паспорт_{date_str}.xlsx"
+        )
+    else:
+        file_name = f"Плановий_паспорт_{date_str}.xlsx"
     st.download_button(
         "📥 Експортувати в xlsx",
-        data=xlsx_buffer,
-        file_name=f"Паспорт_{fmt_safe}_{inputs['naklad']}_{date_str}.xlsx",
+        data=xlsx_buffer if project_ready else b"",
+        file_name=file_name,
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        disabled=not project_ready,
     )
 
     # ---- Деталізація за статтями — для звірки, не для щоденного погляду ----
