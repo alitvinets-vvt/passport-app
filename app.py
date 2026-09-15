@@ -109,6 +109,27 @@ st.markdown(
         margin: 0.1rem 0 0.3rem 0;
     }
 
+    /* Підзаголовки підгруп усередині колонки форми — дрібний сірий caps,
+       без рамок/плашок, щоб не конкурувати з бордовими заголовками колонок. */
+    .form-subgroup-title {
+        font-family: 'Montserrat', -apple-system, sans-serif;
+        font-weight: 600;
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #8a7f6d;
+        margin: 0.5rem 0 0.2rem 0;
+    }
+
+    /* Боксовані картки для головних метрик результату (як у макеті) —
+       Streamlit-контейнер st.metric, а не власна розмітка. */
+    div[data-testid="stMetric"] {
+        background-color: #F1E9DC;
+        border: 1px solid #E6DCC8;
+        border-radius: 6px;
+        padding: 0.9rem 1.1rem;
+    }
+
     div[data-testid="stMetricValue"] {
         font-family: 'Montserrat', -apple-system, sans-serif;
         font-weight: 700;
@@ -239,9 +260,13 @@ st.subheader("Вхідні параметри книжки")
 col1, col2 = st.columns(2)
 with col1:
     st.markdown('<p class="form-group-title">Текст книги</p>', unsafe_allow_html=True)
+
+    st.markdown('<p class="form-subgroup-title">Параметри тексту</p>', unsafe_allow_html=True)
     fmt = st.selectbox("Формат", options=list(params["formats"].keys()) or ["—"])
     zirka = st.selectbox("Зірковість", options=list(params["translation"].keys()) or ["—"])
     complexity = st.selectbox("Складність", options=list(params["editing"].keys()) or ["—"])
+
+    st.markdown('<p class="form-subgroup-title">Обсяг і тираж</p>', unsafe_allow_html=True)
     znaky = st.number_input("Кількість знаків (оригінал)", min_value=0, value=700_000, step=10_000)
     is_translated = st.checkbox("Перекладна книга")
     storinkovist_multiplier = st.number_input(
@@ -252,12 +277,17 @@ with col1:
             "об'ємнішим (наприклад, 1,2 = +20% сторінок)."
         ),
     )
+    naklad = st.number_input("Наклад", min_value=100, value=3100, step=100)
 
 with col2:
     st.markdown('<p class="form-group-title">Друк та оформлення</p>', unsafe_allow_html=True)
+
+    st.markdown('<p class="form-subgroup-title">Оформлення блоку</p>', unsafe_allow_html=True)
     color_mode = st.selectbox("Колірність блоку", ["1+1 (ч/б)", "4+4 (повний колір)"])
     effect = st.selectbox("Ефекти обкладинки", ["Норма", "Бонус", "Преміум"])
     has_zriz = st.checkbox("Кольоровий зріз")
+
+    st.markdown('<p class="form-subgroup-title">Витрати на обкладинку</p>', unsafe_allow_html=True)
     _suma_help = "Сума узгоджена вручну (поки без тарифів у таблиці)."
     oblozhka_suma = st.number_input(
         "Обкладинка (дизайн), грн чистими", min_value=0, value=0, step=100,
@@ -267,9 +297,7 @@ with col2:
         "Ефекти обкладинки, грн чистими", min_value=0, value=0, step=100,
         help=_suma_help,
     )
-    naklad = st.number_input("Наклад", min_value=100, value=3100, step=100)
-
-avans = st.number_input("Аванс за текст, грн", min_value=0, value=0, step=1000)
+    avans = st.number_input("Аванс за текст, грн", min_value=0, value=0, step=1000)
 
 def _display_value(value, suffix=""):
     if value is None:
