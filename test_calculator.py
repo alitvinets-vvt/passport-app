@@ -178,6 +178,54 @@ class CalculateTranslatedExampleTest(unittest.TestCase):
         self.assertEqual(self.result["rrc"], 4519)
 
 
+STORINKOVIST_INPUTS = {
+    **REFERENCE_INPUTS,
+    "storinkovist_multiplier": 1.2,
+}
+
+
+class CalculateStorinkovistMultiplierTest(unittest.TestCase):
+    """Той самий контрольний приклад, що й CalculateReferenceExampleTest
+    (700 000 знаків / простий / не перекладна / 84х108/32 / ч/б / Норма /
+    T3), але з ручним Множником сторінковості = 1,2.
+
+    Множник застосовується ТІЛЬКИ до сторінок (§ калькулятора):
+      сторінки_база = 700000 / 1290 * (1 + 0,0115) = 548,8759689921...
+      сторінки      = 548,8759689921... x 1,2       = 658,6511627907...
+      зошитів       = ОКРУГЛ_ВГОРУ(658,6511.../32)  = 21   (було 18 при 1.0)
+
+    Каскадом далі (блок1/ОРИГІНАЛ-МАКЕТ не зачеплені — рахуються від
+    знаків, не сторінок):
+      блок          = 21 x 50 (ціна зошита) x 1.0 (k_тир T3) x 1.0 (k_колір)
+                      = 1050,0     (було 900,0)
+      обкладинка_др = 50,0 (не залежить від зошитів — без змін)
+      друк_за_шт    = 1050,0 + 50,0 + 0,0 = 1100,0   (було 950,0)
+      РРЦ: собівартість_1 = 56519,272727.../3100 + 1100,0 = 1118,2320225...
+           3,9 x 1118,2320225... = 4361,1048880...  → округлення до
+           найближчого …9 = 4359                       (було 3779)
+    """
+
+    def setUp(self):
+        self.result = calculate(dict(STORINKOVIST_INPUTS), REFERENCE_PARAMS)
+
+    def test_oryhinal_maket_unchanged(self):
+        # Множник не впливає на редакційні статті — тільки на сторінковість.
+        self.assertAlmostEqual(self.result["oryhinal_maket"], 56519.27, places=2)
+
+    def test_block2_druk(self):
+        block2 = self.result["block2"]
+        self.assertIsNotNone(block2)
+        self.assertAlmostEqual(block2["storinky"], 658.65, places=2)
+        self.assertEqual(block2["zoshytiv"], 21)
+        self.assertAlmostEqual(block2["blok"], 1050.0, places=2)
+        self.assertAlmostEqual(block2["obkladynka_dr"], 50.0, places=2)
+        self.assertAlmostEqual(block2["zriz"], 0.0, places=2)
+        self.assertAlmostEqual(self.result["druk_za_sht"], 1100.0, places=2)
+
+    def test_rrc(self):
+        self.assertEqual(self.result["rrc"], 4359)
+
+
 class RoundTo9Test(unittest.TestCase):
     """Округлення РРЦ — до найближчого числа, що закінчується на 9."""
 

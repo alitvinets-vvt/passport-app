@@ -164,7 +164,8 @@ def _calculate_block2(inputs: dict, params: dict):
         else 1.0
     )
 
-    storinky = znaky_rozrah / znakiv_stor * (1 + zazor)
+    storinkovist_multiplier = _to_float(inputs.get("storinkovist_multiplier"), 1.0)
+    storinky = znaky_rozrah / znakiv_stor * (1 + zazor) * storinkovist_multiplier
     zoshytiv = math.ceil(storinky / zoshyt_stor)
     blok = zoshytiv * price_zoshyt * k_tyr * k_kolir
     obkladynka_dr = cena_obkladynky * k_tyr
@@ -188,7 +189,10 @@ def calculate(inputs: dict, params: dict) -> dict:
 
     inputs: словник вхідних даних користувача —
       format, zirka, complexity, perekladna, znaky,
-      oblozhka, efekty, has_zriz, color_mode, effect, naklad, avans.
+      oblozhka, efekty, has_zriz, color_mode, effect, naklad, avans,
+      storinkovist_multiplier (ручний, за замовчуванням 1.0 — не
+        впливає на розрахунок; застосовується тільки до сторінок,
+        звідти каскадом на зошити/блок/друк_за_шт/РРЦ).
     params: результат sheets_reader.load_params().
 
     Повертає:

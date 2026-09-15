@@ -64,6 +64,7 @@ def export_to_xlsx(inputs: dict, result: dict) -> io.BytesIO:
         ("Кількість знаків (оригінал)", inputs.get("znaky")),
         ("Перекладна книга", "Так" if inputs.get("perekladna") else "Ні"),
         ("Наклад", inputs.get("naklad")),
+        ("Множник сторінковості", inputs.get("storinkovist_multiplier", 1.0)),
         ("Колірність блоку", inputs.get("color_mode")),
         ("Ефекти обкладинки", inputs.get("effect")),
         ("Кольоровий зріз", "Так" if inputs.get("has_zriz") else "Ні"),
@@ -72,7 +73,7 @@ def export_to_xlsx(inputs: dict, result: dict) -> io.BytesIO:
         ws.cell(row=row, column=1, value=label)
         cell = ws.cell(row=row, column=2, value=value)
         if isinstance(value, (int, float)) and not isinstance(value, bool):
-            cell.number_format = INT_FORMAT
+            cell.number_format = "0.00" if label == "Множник сторінковості" else INT_FORMAT
         row += 1
 
     row += 1

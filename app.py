@@ -250,6 +250,14 @@ with col2:
     color_mode = st.selectbox("Колірність блоку", ["1+1 (ч/б)", "4+4 (повний колір)"])
     effect = st.selectbox("Ефекти обкладинки", ["Норма", "Бонус", "Преміум"])
     has_zriz = st.checkbox("Кольоровий зріз")
+    storinkovist_multiplier = st.number_input(
+        "Множник сторінковості", min_value=1.0, value=1.0, step=0.05,
+        help=(
+            "За замовчуванням 1,0 — не впливає на розрахунок. Збільшуйте для "
+            "проєктів з ілюструванням або складною версткою, яка робить текст "
+            "об'ємнішим (наприклад, 1,2 = +20% сторінок)."
+        ),
+    )
     _suma_help = "Сума узгоджена вручну (поки без тарифів у таблиці)."
     oblozhka_suma = st.number_input(
         "Обкладинка (дизайн), грн чистими", min_value=0, value=0, step=100,
@@ -331,6 +339,7 @@ if st.button("🧮 Розрахувати", type="primary"):
         "has_zriz": has_zriz,
         "naklad": naklad,
         "avans": avans,
+        "storinkovist_multiplier": storinkovist_multiplier,
     }
     st.session_state["passport_inputs"] = inputs
     st.session_state["passport_result"] = calculate(inputs, params)
