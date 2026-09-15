@@ -122,6 +122,15 @@ st.markdown(
         margin: 0.5rem 0 0.2rem 0;
     }
 
+    /* Поля "Індекс проєкту"/"Назва проєкту" — приглушений світло-зелений
+       фон замість кремового решти форми, щоб виділити ідентифікацію
+       проєкту як окрему категорію, а не параметр розрахунку. */
+    .st-key-project_index_field [data-testid="stTextInputRootElement"],
+    .st-key-project_name_field [data-testid="stTextInputRootElement"] {
+        background-color: #DCE8D8 !important;
+        border-color: #C3D3BE !important;
+    }
+
     /* Боксовані картки для головних метрик результату (як у макеті) —
        Streamlit-контейнер st.metric, а не власна розмітка. */
     div[data-testid="stMetric"] {
@@ -281,9 +290,9 @@ st.subheader("Вхідні параметри книжки")
 st.markdown('<p class="form-group-title">Ідентифікація проєкту</p>', unsafe_allow_html=True)
 proj_col1, proj_col2 = st.columns(2)
 with proj_col1:
-    project_index = st.text_input("Індекс проєкту")
+    project_index = st.text_input("Індекс проєкту", key="project_index_field")
 with proj_col2:
-    project_name = st.text_input("Назва проєкту")
+    project_name = st.text_input("Назва проєкту", key="project_name_field")
 
 col1, col2 = st.columns(2)
 with col1:
