@@ -18,11 +18,21 @@ import math
 
 from sheets_reader import get_tier_for_naklad
 
+DEFAULT_RETAIL_DISCOUNT = 0.45
+
 
 def _to_float(v, default=0.0):
     if v is None:
         return default
     return float(v)
+
+
+def get_retail_discount(params: dict) -> float:
+    """Знижка рітейлу (частка 0..1) — з params["general"]["Знижка рітейлу"],
+    інакше safe-дефолт 45%, якщо параметра ще нема в майстер-таблиці
+    (щоб точка беззбитковості не падала, доки технолог не додав рядок)."""
+    general = params.get("general", {})
+    return _to_float(general.get("Знижка рітейлу"), DEFAULT_RETAIL_DISCOUNT)
 
 
 def _round_to_9(x: float) -> int:
@@ -68,6 +78,16 @@ def _calculate_block1(inputs: dict, params: dict) -> dict:
     tarif_pereklad = params.get("translation", {}).get(zirka)
     tarif_redaguvannya = params.get("editing", {}).get(complexity)
 
+    # Явно фіксуємо брак тарифу в майстер-таблиці (замість тихого
+    # переходу в 0 через _to_float(None) — інакше "тариф не знайдено"
+    # виглядає точнісінько як "тариф дорівнює нулю", і користувач не
+    # має шансу це помітити, дивлячись лише на підсумкову таблицю).
+    missing_tarify = []
+    if perekladna and tarif_pereklad is None:
+        missing_tarify.append(("переклад", zirka))
+    if tarif_redaguvannya is None:
+        missing_tarify.append(("редагування", complexity))
+
     # Переклад оплачується за обсягом ОРИГІНАЛУ — без множника 1,2.
     # Множник застосовується тільки до редагування, коректури й сторінковості,
     # бо вони працюють з уже перекладеним (розбухлим) текстом.
@@ -104,6 +124,7 @@ def _calculate_block1(inputs: dict, params: dict) -> dict:
         "rows": rows,
         "inshi": inshi,
         "oryhinal_maket": oryhinal_maket,
+        "missing_tarify": missing_tarify,
     }
 
 
@@ -192,7 +213,10 @@ def calculate(inputs: dict, params: dict) -> dict:
       oblozhka, efekty, has_zriz, color_mode, effect, naklad, avans,
       storinkovist_multiplier (ручний, за замовчуванням 1.0 — не
         впливає на розрахунок; застосовується тільки до сторінок,
-        звідти каскадом на зошити/блок/друк_за_шт/РРЦ).
+        звідти каскадом на зошити/блок/друк_за_шт/РРЦ),
+      retail_discount (частка 0..1, ручний override; якщо не задано —
+        береться get_retail_discount(params) — з майстер-таблиці, або
+        DEFAULT_RETAIL_DISCOUNT, якщо параметра там ще нема).
     params: результат sheets_reader.load_params().
 
     Повертає:
@@ -201,7 +225,15 @@ def calculate(inputs: dict, params: dict) -> dict:
       block2 (деталі друку: сторінки/зошитів/блок/обкладинка_др/зріз,
         None, якщо для обраної комбінації бракує даних),
       druk_za_sht (= block2["razom"], або None),
-      rrc (None, доки druk_za_sht невідомий).
+      rrc (None, доки druk_za_sht невідомий),
+      breakeven (точка беззбитковості: {"units", "percent_of_run",
+        "retail_discount"}, або None — доки rrc невідомий чи дохід
+        на 1 прим. (РРЦ × (1 − знижка)) <= 0),
+      missing_tarify (список (стаття, значення) — тариф перекладу чи
+        редагування не знайдено в майстер-таблиці для обраної зірки/
+        складності; відповідна стаття тоді порахована як 0, а не
+        пропущена — UI повинен показати явне попередження, не тишком
+        приховувати брак даних під правдоподібним нулем).
     """
     general = params.get("general", {})
     block1 = _calculate_block1(inputs, params)
@@ -215,6 +247,23 @@ def calculate(inputs: dict, params: dict) -> dict:
         sobivartist_1 = block1["oryhinal_maket"] / naklad + druk_za_sht
         rrc = _round_to_9(k_narinka * sobivartist_1)
 
+    retail_discount = inputs.get("retail_discount")
+    retail_discount = (
+        get_retail_discount(params) if retail_discount is None else _to_float(retail_discount)
+    )
+
+    breakeven = None
+    if rrc is not None and druk_za_sht is not None and naklad:
+        dohid_na_1_prym = rrc * (1 - retail_discount)
+        if dohid_na_1_prym > 0:
+            povna_sobivartist = block1["oryhinal_maket"] + druk_za_sht * naklad
+            units = math.ceil(povna_sobivartist / dohid_na_1_prym)
+            breakeven = {
+                "units": units,
+                "percent_of_run": units / naklad * 100,
+                "retail_discount": retail_discount,
+            }
+
     return {
         "znaky_rozrah": block1["znaky_rozrah"],
         "tarif_pereklad": block1["tarif_pereklad"],
@@ -225,6 +274,8 @@ def calculate(inputs: dict, params: dict) -> dict:
         "block2": block2,
         "druk_za_sht": druk_za_sht,
         "rrc": rrc,
+        "breakeven": breakeven,
+        "missing_tarify": block1["missing_tarify"],
     }
 
 

@@ -19,7 +19,7 @@ Google Sheets: params — статичний фікстур, щоб резуль
 
 import unittest
 
-from calculator import calculate, compare_naklady, default_naklady
+from calculator import calculate, compare_naklady, default_naklady, get_retail_discount
 
 REFERENCE_PARAMS = {
     "translation": {"5★": 125.0, "4★": 120.0, "3★": 105.0, "2★": 120.0, "1★": 90.0},
@@ -268,6 +268,99 @@ class CompareNakladyTest(unittest.TestCase):
     def test_oryhinal_maket_independent_of_naklad(self):
         oms = {r["result"]["oryhinal_maket"] for r in self.rows}
         self.assertEqual(len(oms), 1)
+
+
+class BreakevenPointTest(unittest.TestCase):
+    """Точка беззбитковості на основному контрольному прикладі
+    (56 519,27 / 950 / 3779, знижка рітейлу — safe-дефолт 45%,
+    бо REFERENCE_PARAMS не задає "Знижка рітейлу" в ЗАГАЛЬНІ):
+
+      дохід_на_1_прим       = 3779 x (1 - 0,45)            = 2078,45
+      повна_собівартість    = 56519,2727... + 950 x 3100   = 3 001 519,2727...
+      точка_беззбитковості  = ОКРУГЛ_ВГОРУ(3001519,27/2078,45) = 1445
+      відсоток_тиражу       = 1445 / 3100 x 100             ≈ 46,61%
+
+    Перевірено вручну і звірено з виводом calculate() перед комітом.
+    """
+
+    def test_default_retail_discount_is_45_percent(self):
+        self.assertAlmostEqual(get_retail_discount(REFERENCE_PARAMS), 0.45, places=6)
+
+    def test_breakeven_matches_manual_calculation(self):
+        result = calculate(dict(REFERENCE_INPUTS), REFERENCE_PARAMS)
+        breakeven = result["breakeven"]
+        self.assertIsNotNone(breakeven)
+        self.assertEqual(breakeven["units"], 1445)
+        self.assertAlmostEqual(breakeven["percent_of_run"], 46.612903, places=4)
+        self.assertAlmostEqual(breakeven["retail_discount"], 0.45, places=6)
+
+    def test_explicit_retail_discount_overrides_default(self):
+        inputs = {**REFERENCE_INPUTS, "retail_discount": 0.30}
+        result = calculate(dict(inputs), REFERENCE_PARAMS)
+        self.assertAlmostEqual(result["breakeven"]["retail_discount"], 0.30, places=6)
+
+    def test_100_percent_discount_returns_none_instead_of_crashing(self):
+        inputs = {**REFERENCE_INPUTS, "retail_discount": 1.0}
+        result = calculate(dict(inputs), REFERENCE_PARAMS)
+        self.assertIsNone(result["breakeven"])
+
+    def test_none_when_rrc_missing(self):
+        params_without_price = {
+            **REFERENCE_PARAMS,
+            "formats": {
+                **REFERENCE_PARAMS["formats"],
+                "84х108/32": {**REFERENCE_PARAMS["formats"]["84х108/32"], "price_zoshyt": None},
+            },
+        }
+        result = calculate(dict(REFERENCE_INPUTS), params_without_price)
+        self.assertIsNone(result["rrc"])
+        self.assertIsNone(result["breakeven"])
+
+
+class MissingTarifyTest(unittest.TestCase):
+    """Регресія на баг "Переклад = 0.00 при увімкненій перекладній книзі":
+
+    tarif_pereklad = params["translation"].get(zirka) інколи повертав None
+    (зірка не знайдена в майстер-таблиці), і _to_float(None) тихо
+    перетворював це на 0 — виглядало як "нульовий тариф", хоча насправді
+    даних просто бракувало. calculate() тепер повертає явний
+    "missing_tarify" список, щоб UI показував попередження замість
+    мовчазного нуля."""
+
+    def test_no_missing_tarify_in_reference_example(self):
+        result = calculate(dict(REFERENCE_INPUTS), REFERENCE_PARAMS)
+        self.assertEqual(result["missing_tarify"], [])
+
+    def test_missing_translation_tariff_flagged_when_translated(self):
+        params_no_5star = {
+            **REFERENCE_PARAMS,
+            "translation": {k: v for k, v in REFERENCE_PARAMS["translation"].items() if k != "5★"},
+        }
+        inputs = {**REFERENCE_INPUTS, "perekladna": True}
+        result = calculate(dict(inputs), params_no_5star)
+        # Тариф відсутній -> стаття "переклад" і далі рахується як 0 (не
+        # падає), але тепер це явно позначено, а не мовчки виглядає як факт.
+        self.assertEqual(result["rows"]["переклад"]["razom"], 0.0)
+        self.assertIn(("переклад", "5★"), result["missing_tarify"])
+
+    def test_missing_translation_tariff_not_flagged_when_not_translated(self):
+        # Не перекладна книга не платить за переклад узагалі — відсутність
+        # тарифу перекладу в таблиці тут не проблема, попередження не потрібне.
+        params_no_5star = {
+            **REFERENCE_PARAMS,
+            "translation": {k: v for k, v in REFERENCE_PARAMS["translation"].items() if k != "5★"},
+        }
+        result = calculate(dict(REFERENCE_INPUTS), params_no_5star)
+        self.assertEqual(result["missing_tarify"], [])
+
+    def test_missing_editing_tariff_flagged(self):
+        params_no_editing = {
+            **REFERENCE_PARAMS,
+            "editing": {k: v for k, v in REFERENCE_PARAMS["editing"].items() if k != "простий"},
+        }
+        result = calculate(dict(REFERENCE_INPUTS), params_no_editing)
+        self.assertEqual(result["rows"]["редагування"]["razom"], 0.0)
+        self.assertIn(("редагування", "простий"), result["missing_tarify"])
 
 
 class RoundTo9Test(unittest.TestCase):

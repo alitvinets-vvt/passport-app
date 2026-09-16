@@ -48,11 +48,13 @@ def _display(value, suffix=""):
 def export_to_xlsx(inputs: dict, result: dict) -> io.BytesIO:
     """Формує xlsx: шапка (індекс/назва проєкту) і три секції —
     параметри книги, редакційні витрати (Блок 1) і друк + підсумок
-    (Блок 2 + РРЦ) — на одному аркуші, значення 1:1 з того, що
-    показано в UI.
+    (Блок 2 + РРЦ + точка беззбитковості) — на одному аркуші, значення
+    1:1 з того, що показано в UI.
 
     inputs["project_index"]/["project_name"] — ручна ідентифікація
-    проєкту для файлу експорту, не бере участі в calculate()."""
+    проєкту для файлу експорту, не бере участі в calculate().
+    result["breakeven"] — з calculate(), None якщо не порахована
+    (тоді відповідні клітинки лишаються порожніми)."""
     wb = Workbook()
     ws = wb.active
     ws.title = "Плановий Паспорт"
@@ -151,6 +153,27 @@ def export_to_xlsx(inputs: dict, result: dict) -> io.BytesIO:
     if result.get("rrc") is not None:
         rrc_cell.number_format = INT_FORMAT
     rrc_cell.font = SECTION_FONT
+    row += 2
+
+    breakeven = result.get("breakeven")
+    ws.cell(row=row, column=1, value="Знижка рітейлу, %")
+    ws.cell(
+        row=row, column=2,
+        value=breakeven["retail_discount"] * 100 if breakeven else None,
+    ).number_format = "0"
+    row += 1
+
+    ws.cell(row=row, column=1, value="Точка беззбитковості, прим.").font = TOTAL_FONT
+    units_cell = ws.cell(row=row, column=2, value=breakeven["units"] if breakeven else None)
+    units_cell.number_format = INT_FORMAT
+    units_cell.font = TOTAL_FONT
+    row += 1
+
+    ws.cell(row=row, column=1, value="Точка беззбитковості, % тиражу")
+    ws.cell(
+        row=row, column=2,
+        value=breakeven["percent_of_run"] if breakeven else None,
+    ).number_format = "0.0"
 
     # ---- Ширина колонок ----
     widths = [28, 16, 16, 14, 16]

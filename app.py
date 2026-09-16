@@ -13,7 +13,13 @@ from dotenv import load_dotenv
 import pandas as pd
 import streamlit as st
 
-from calculator import calculate, compare_naklady, default_naklady
+from calculator import (
+    DEFAULT_RETAIL_DISCOUNT,
+    calculate,
+    compare_naklady,
+    default_naklady,
+    get_retail_discount,
+)
 from export import export_to_xlsx
 from sheets_reader import load_params, get_tier_for_naklad
 
@@ -307,6 +313,13 @@ with st.sidebar:
         else:
             st.success("Усі параметри заповнені.")
 
+        if "Знижка рітейлу" not in params["general"]:
+            st.warning(
+                f"⚠️ Параметр «Знижка рітейлу» не знайдено в блоці ЗАГАЛЬНІ — "
+                f"використано дефолт {int(DEFAULT_RETAIL_DISCOUNT * 100)}% "
+                f"для точки беззбитковості."
+            )
+
 # ---- Форма вводу (§2 драфту v0.2) — поки без розрахунку ----
 st.subheader("Вхідні параметри книжки")
 
@@ -338,6 +351,15 @@ with col1:
         ),
     )
     naklad = st.number_input("Наклад", min_value=100, value=3100, step=100)
+    retail_discount_pct = st.number_input(
+        "Знижка рітейлу, %", min_value=0, max_value=100,
+        value=round(get_retail_discount(params) * 100), step=1,
+        help=(
+            "Частка РРЦ, яку забирає рітейл. Впливає тільки на точку "
+            "беззбитковості — не на сам розрахунок РРЦ. За замовчуванням — "
+            "значення з майстер-таблиці (блок ЗАГАЛЬНІ)."
+        ),
+    )
 
 with col2:
     st.markdown('<p class="form-group-title">Друк та оформлення</p>', unsafe_allow_html=True)
@@ -494,6 +516,7 @@ book_inputs = {
     "has_zriz": has_zriz,
     "avans": avans,
     "storinkovist_multiplier": storinkovist_multiplier,
+    "retail_discount": retail_discount_pct / 100.0,
 }
 
 tab_single, tab_compare = st.tabs(["🧮 Одиночний розрахунок", "📊 Порівняння накладів"])
@@ -510,10 +533,34 @@ with tab_single:
         result = st.session_state["passport_result"]
         block2 = result["block2"]
 
+        if result["missing_tarify"]:
+            items = "; ".join(f"{stattia} «{znachennya}»" for stattia, znachennya in result["missing_tarify"])
+            st.warning(
+                f"⚠️ Тариф не знайдено в майстер-таблиці для: {items} — "
+                "відповідна стаття порахована як 0 грн, тому ОРИГІНАЛ-МАКЕТ і РРЦ "
+                "нижче можуть бути занижені. Перевірте блоки ПЕРЕКЛАД/РЕДАГУВАННЯ "
+                "в Google-таблиці."
+            )
+
         # ---- Головні результати: картки-метрики + РРЦ як акцент ----
-        m1, m2 = st.columns(2)
+        breakeven = result["breakeven"]
+        m1, m2, m3 = st.columns(3)
         m1.metric("ОРИГІНАЛ-МАКЕТ, грн", _fmt(result["oryhinal_maket"]))
         m2.metric("Друк за 1 прим., грн", _fmt(block2["razom"]) if block2 else "—")
+        if breakeven is None:
+            m3.metric("Точка беззбитковості, прим.", "—")
+        else:
+            units_label = f"{breakeven['units']:,}".replace(",", " ")
+            pct = breakeven["percent_of_run"]
+            m3.metric(
+                "Точка беззбитковості, прим.", units_label,
+                help=(
+                    "Скільки примірників треба продати, щоб покрити повну "
+                    "собівартість тиражу — з урахуванням знижки рітейлу "
+                    f"({breakeven['retail_discount'] * 100:.0f}%)."
+                ),
+            )
+            m3.caption(("⚠️ " if pct > 100 else "") + f"{pct:.0f}% тиражу")
 
         if result["rrc"] is None:
             st.warning(
@@ -526,6 +573,13 @@ with tab_single:
                 f'<div class="rrc-hero"><div class="rrc-label">РРЦ</div>'
                 f'<div class="rrc-value">{result["rrc"]} грн</div></div>',
                 unsafe_allow_html=True,
+            )
+
+        if breakeven is not None and breakeven["percent_of_run"] > 100:
+            st.error(
+                f"⚠️ Точка беззбитковості ({breakeven['percent_of_run']:.0f}% тиражу) "
+                "перевищує наклад — книжка не окупається навіть повністю проданим "
+                "тиражем за поточної знижки рітейлу."
             )
 
         project_ready = bool(project_index.strip()) and bool(project_name.strip())
