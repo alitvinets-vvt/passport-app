@@ -139,18 +139,49 @@ st.markdown(
     }
 
     /* Боксовані картки для головних метрик результату (як у макеті) —
-       Streamlit-контейнер st.metric, а не власна розмітка. */
-    div[data-testid="stMetric"] {
+       власна розмітка замість st.metric: у st.metric підпис і число
+       обрізаються трьома крапками на довгих значеннях (6+ значущих
+       цифр у сумі, довгий підпис "Точка беззбитковості, прим.") і не
+       переносяться — тут підпис переноситься по словах, а число
+       переноситься, а не ховається. */
+    .metric-card {
         background-color: #F1E9DC;
         border: 1px solid #E6DCC8;
         border-radius: 6px;
         padding: 0.9rem 1.1rem;
+        height: 100%;
+        box-sizing: border-box;
     }
-
-    div[data-testid="stMetricValue"] {
+    .metric-card .metric-label {
+        font-family: 'Montserrat', -apple-system, sans-serif;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        color: #8a7f6d;
+        font-size: 0.75rem;
+        white-space: normal;
+        overflow-wrap: break-word;
+        margin-bottom: 0.3rem;
+    }
+    .metric-card .metric-value {
         font-family: 'Montserrat', -apple-system, sans-serif;
         font-weight: 700;
         color: #7A2331;
+        font-size: 1.5rem;
+        line-height: 1.25;
+        white-space: normal;
+        overflow-wrap: break-word;
+        word-break: break-word;
+    }
+    .metric-card .metric-caption {
+        font-family: 'Montserrat', -apple-system, sans-serif;
+        font-size: 0.8rem;
+        color: #8a7f6d;
+        margin-top: 0.3rem;
+    }
+    .metric-card .metric-help {
+        cursor: help;
+        color: #8a7f6d;
     }
 
     /* Компактний список у sidebar-панелі "Стан даних" — вузька колонка,
@@ -387,6 +418,22 @@ def _display_value(value, suffix=""):
     return f"{value}{suffix}"
 
 
+def _metric_card(column, label, value, caption=None, help_text=None):
+    """Картка-метрика власною розміткою (не st.metric) — підпис
+    переноситься по словах, число переноситься замість обрізання
+    трьома крапками на довгих значеннях."""
+    help_html = f' <span class="metric-help" title="{help_text}">ⓘ</span>' if help_text else ""
+    caption_html = f'<div class="metric-caption">{caption}</div>' if caption else ""
+    column.markdown(
+        f'<div class="metric-card">'
+        f'<div class="metric-label">{label}{help_html}</div>'
+        f'<div class="metric-value">{value}</div>'
+        f"{caption_html}"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+
 _INVALID_FILENAME_CHARS = re.compile(r'[\\/:*?"<>|]')
 
 
@@ -553,22 +600,22 @@ with tab_single:
         # ---- Головні результати: картки-метрики + РРЦ як акцент ----
         breakeven = result["breakeven"]
         m1, m2, m3 = st.columns(3)
-        m1.metric("ОРИГІНАЛ-МАКЕТ, грн", _fmt(result["oryhinal_maket"]))
-        m2.metric("Друк за 1 прим., грн", _fmt(block2["razom"]) if block2 else "—")
+        _metric_card(m1, "ОРИГІНАЛ-МАКЕТ, грн", _fmt(result["oryhinal_maket"]))
+        _metric_card(m2, "Друк за 1 прим., грн", _fmt(block2["razom"]) if block2 else "—")
         if breakeven is None:
-            m3.metric("Точка беззбитковості, прим.", "—")
+            _metric_card(m3, "Точка беззбитковості, прим.", "—")
         else:
             units_label = f"{breakeven['units']:,}".replace(",", " ")
             pct = breakeven["percent_of_run"]
-            m3.metric(
-                "Точка беззбитковості, прим.", units_label,
-                help=(
+            _metric_card(
+                m3, "Точка беззбитковості, прим.", units_label,
+                caption=("⚠️ " if pct > 100 else "") + f"{pct:.0f}% тиражу",
+                help_text=(
                     "Скільки примірників треба продати, щоб покрити повну "
                     "собівартість тиражу — з урахуванням знижки рітейлу "
                     f"({breakeven['retail_discount'] * 100:.0f}%)."
                 ),
             )
-            m3.caption(("⚠️ " if pct > 100 else "") + f"{pct:.0f}% тиражу")
 
         if result["rrc"] is None:
             st.warning(
