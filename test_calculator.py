@@ -79,7 +79,20 @@ REFERENCE_INPUTS = {
 
 
 class CalculateReferenceExampleTest(unittest.TestCase):
-    """700 000 знаків / простий / не перекладна / 84х108/32 / ч/б / Норма / T3."""
+    """700 000 знаків / простий / не перекладна / 84х108/32 / ч/б / Норма / T3.
+
+    Друк (Блок 2) перерахований 2026-09-16 під нову логіку "підгонки
+    сторінок під кратність + можливість половини зошита":
+      сторінки_сирі = 700000/1290 x 1,0115           = 548,8759689922
+      n             = 548,8759689922 / 16            = 34,3047480620
+      round-half-up(n)                                = 34
+      сторінки_підг = 34 x 16                         = 544
+      зошитів       = 544 / 32                        = 17,0 (рівно)
+      блок          = 17,0 x 50 x 1,0(T3) x 1,0       = 850,00  (було 900,00)
+      друк_за_шт    = 850,00 + 50,00                  = 900,00  (було 950,00)
+      РРЦ           = ОКРУГЛ_до_9(3,9 x (56519,27/3100+900,00)) = 3579 (було 3779)
+    ОРИГІНАЛ-МАКЕТ (Блок 1) не залежить від сторінок — без змін.
+    """
 
     def setUp(self):
         self.result = calculate(dict(REFERENCE_INPUTS), REFERENCE_PARAMS)
@@ -98,15 +111,16 @@ class CalculateReferenceExampleTest(unittest.TestCase):
     def test_block2_druk(self):
         block2 = self.result["block2"]
         self.assertIsNotNone(block2)
-        self.assertEqual(block2["zoshytiv"], 18)
+        self.assertAlmostEqual(block2["storinky"], 544, places=2)
+        self.assertAlmostEqual(block2["zoshytiv"], 17.0, places=2)
         self.assertEqual(block2["tier"]["tier"], "T3")
-        self.assertAlmostEqual(block2["blok"], 900.0, places=2)
+        self.assertAlmostEqual(block2["blok"], 850.0, places=2)
         self.assertAlmostEqual(block2["obkladynka_dr"], 50.0, places=2)
         self.assertAlmostEqual(block2["zriz"], 0.0, places=2)
-        self.assertAlmostEqual(self.result["druk_za_sht"], 950.0, places=2)
+        self.assertAlmostEqual(self.result["druk_za_sht"], 900.0, places=2)
 
     def test_rrc(self):
-        self.assertEqual(self.result["rrc"], 3779)
+        self.assertEqual(self.result["rrc"], 3579)
 
 
 TRANSLATED_PARAMS = {
@@ -144,6 +158,17 @@ class CalculateTranslatedExampleTest(unittest.TestCase):
     випадково стояло 1,15%) — окремий TRANSLATED_PARAMS, а не
     REFERENCE_PARAMS, щоб не зачепити головний контрольний приклад
     (не перекладний), який навмисно лишається на старому знімку.
+
+    Друк перерахований 2026-09-16 під нову логіку сторінок/зошитів
+    (перемикач "перекладна" врахований на кроці знаки_розрах вище):
+      сторінки_сирі = 840000/1290 x 1,0            = 651,1627906977
+      n             = 651,1627906977 / 16          = 40,6976744186
+      round-half-up(n)                              = 41
+      сторінки_підг = 41 x 16                       = 656
+      зошитів       = 656 / 32                      = 20,5 (пів-зошита!)
+      блок          = 20,5 x 50 x 1,0(T3) x 1,0     = 1025,00 (було 1050,00)
+      друк_за_шт    = 1025,00 + 50,00               = 1075,00 (було 1100,00)
+      РРЦ           = ОКРУГЛ_до_9(3,9 x (181459,49/3100+1075,00)) = 4419 (було 4519)
     """
 
     def setUp(self):
@@ -166,16 +191,16 @@ class CalculateTranslatedExampleTest(unittest.TestCase):
     def test_block2_druk(self):
         block2 = self.result["block2"]
         self.assertIsNotNone(block2)
-        self.assertAlmostEqual(block2["storinky"], 651.16, places=2)
-        self.assertEqual(block2["zoshytiv"], 21)
+        self.assertAlmostEqual(block2["storinky"], 656, places=2)
+        self.assertAlmostEqual(block2["zoshytiv"], 20.5, places=2)
         self.assertEqual(block2["tier"]["tier"], "T3")
-        self.assertAlmostEqual(block2["blok"], 1050.0, places=2)
+        self.assertAlmostEqual(block2["blok"], 1025.0, places=2)
         self.assertAlmostEqual(block2["obkladynka_dr"], 50.0, places=2)
         self.assertAlmostEqual(block2["zriz"], 0.0, places=2)
-        self.assertAlmostEqual(self.result["druk_za_sht"], 1100.0, places=2)
+        self.assertAlmostEqual(self.result["druk_za_sht"], 1075.0, places=2)
 
     def test_rrc(self):
-        self.assertEqual(self.result["rrc"], 4519)
+        self.assertEqual(self.result["rrc"], 4419)
 
 
 STORINKOVIST_INPUTS = {
@@ -189,20 +214,23 @@ class CalculateStorinkovistMultiplierTest(unittest.TestCase):
     (700 000 знаків / простий / не перекладна / 84х108/32 / ч/б / Норма /
     T3), але з ручним Множником сторінковості = 1,2.
 
-    Множник застосовується ТІЛЬКИ до сторінок (§ калькулятора):
-      сторінки_база = 700000 / 1290 * (1 + 0,0115) = 548,8759689921...
-      сторінки      = 548,8759689921... x 1,2       = 658,6511627907...
-      зошитів       = ОКРУГЛ_ВГОРУ(658,6511.../32)  = 21   (було 18 при 1.0)
+    Множник застосовується ТІЛЬКИ до сторінок (§ калькулятора). Друк
+    перерахований 2026-09-16 під нову логіку сторінок/зошитів:
+      сторінки_сирі = 700000 / 1290 x (1 + 0,0115) x 1,2 = 658,6511627907
+      n             = 658,6511627907 / 16                = 41,1656976744
+      round-half-up(n)                                    = 41
+      сторінки_підг = 41 x 16                             = 656
+      зошитів       = 656 / 32                            = 20,5 (пів-зошита)
 
     Каскадом далі (блок1/ОРИГІНАЛ-МАКЕТ не зачеплені — рахуються від
     знаків, не сторінок):
-      блок          = 21 x 50 (ціна зошита) x 1.0 (k_тир T3) x 1.0 (k_колір)
-                      = 1050,0     (було 900,0)
-      обкладинка_др = 50,0 (не залежить від зошитів — без змін)
-      друк_за_шт    = 1050,0 + 50,0 + 0,0 = 1100,0   (було 950,0)
-      РРЦ: собівартість_1 = 56519,272727.../3100 + 1100,0 = 1118,2320225...
-           3,9 x 1118,2320225... = 4361,1048880...  → округлення до
-           найближчого …9 = 4359                       (було 3779)
+      блок          = 20,5 x 50 (ціна зошита) x 1,0 (k_тир T3) x 1,0 (k_колір)
+                      = 1025,00
+      обкладинка_др = 50,00 (не залежить від зошитів — без змін)
+      друк_за_шт    = 1025,00 + 50,00 = 1075,00
+      РРЦ: собівартість_1 = 56519,272727.../3100 + 1075,00 = 1093,2388009...
+           3,9 x 1093,2388009... = 4263,631323...  → округлення до
+           найближчого …9 = 4259
     """
 
     def setUp(self):
@@ -215,15 +243,15 @@ class CalculateStorinkovistMultiplierTest(unittest.TestCase):
     def test_block2_druk(self):
         block2 = self.result["block2"]
         self.assertIsNotNone(block2)
-        self.assertAlmostEqual(block2["storinky"], 658.65, places=2)
-        self.assertEqual(block2["zoshytiv"], 21)
-        self.assertAlmostEqual(block2["blok"], 1050.0, places=2)
+        self.assertAlmostEqual(block2["storinky"], 656, places=2)
+        self.assertAlmostEqual(block2["zoshytiv"], 20.5, places=2)
+        self.assertAlmostEqual(block2["blok"], 1025.0, places=2)
         self.assertAlmostEqual(block2["obkladynka_dr"], 50.0, places=2)
         self.assertAlmostEqual(block2["zriz"], 0.0, places=2)
-        self.assertAlmostEqual(self.result["druk_za_sht"], 1100.0, places=2)
+        self.assertAlmostEqual(self.result["druk_za_sht"], 1075.0, places=2)
 
     def test_rrc(self):
-        self.assertEqual(self.result["rrc"], 4359)
+        self.assertEqual(self.result["rrc"], 4259)
 
 
 EFEKTY_INPUTS = {
@@ -329,8 +357,8 @@ class CompareNakladyTest(unittest.TestCase):
         result = row["result"]
         self.assertEqual(row["tier"]["tier"], "T3")
         self.assertAlmostEqual(result["oryhinal_maket"], 56519.27, places=2)
-        self.assertAlmostEqual(result["druk_za_sht"], 950.0, places=2)
-        self.assertEqual(result["rrc"], 3779)
+        self.assertAlmostEqual(result["druk_za_sht"], 900.0, places=2)
+        self.assertEqual(result["rrc"], 3579)
 
     def test_rrc_non_increasing_as_naklad_grows(self):
         rrcs = [r["result"]["rrc"] for r in self.rows]
@@ -349,19 +377,21 @@ class CompareNakladyTest(unittest.TestCase):
         for row in self.rows:
             self.assertIsNotNone(row["result"]["breakeven"], row["naklad"])
         breakeven_t3 = next(r for r in self.rows if r["naklad"] == 3100.0)["result"]["breakeven"]
-        self.assertEqual(breakeven_t3["units"], 1445)
-        self.assertAlmostEqual(breakeven_t3["percent_of_run"], 46.612903, places=4)
+        self.assertEqual(breakeven_t3["units"], 1447)
+        self.assertAlmostEqual(breakeven_t3["percent_of_run"], 46.677419, places=4)
 
 
 class BreakevenPointTest(unittest.TestCase):
     """Точка беззбитковості на основному контрольному прикладі
-    (56 519,27 / 950 / 3779, знижка рітейлу — safe-дефолт 45%,
-    бо REFERENCE_PARAMS не задає "Знижка рітейлу" в ЗАГАЛЬНІ):
+    (56 519,27 / 900 / 3579 — друк перерахований під нову логіку
+    сторінок/зошитів 2026-09-16, див. CalculateReferenceExampleTest),
+    знижка рітейлу — safe-дефолт 45%, бо REFERENCE_PARAMS не задає
+    "Знижка рітейлу" в ЗАГАЛЬНІ:
 
-      дохід_на_1_прим       = 3779 x (1 - 0,45)            = 2078,45
-      повна_собівартість    = 56519,2727... + 950 x 3100   = 3 001 519,2727...
-      точка_беззбитковості  = ОКРУГЛ_ВГОРУ(3001519,27/2078,45) = 1445
-      відсоток_тиражу       = 1445 / 3100 x 100             ≈ 46,61%
+      дохід_на_1_прим       = 3579 x (1 - 0,45)            = 1968,45
+      повна_собівартість    = 56519,2727... + 900 x 3100   = 2 846 519,2727...
+      точка_беззбитковості  = ОКРУГЛ_ВГОРУ(2846519,27/1968,45) = 1447
+      відсоток_тиражу       = 1447 / 3100 x 100             ≈ 46,68%
 
     Перевірено вручну і звірено з виводом calculate() перед комітом.
     """
@@ -373,8 +403,8 @@ class BreakevenPointTest(unittest.TestCase):
         result = calculate(dict(REFERENCE_INPUTS), REFERENCE_PARAMS)
         breakeven = result["breakeven"]
         self.assertIsNotNone(breakeven)
-        self.assertEqual(breakeven["units"], 1445)
-        self.assertAlmostEqual(breakeven["percent_of_run"], 46.612903, places=4)
+        self.assertEqual(breakeven["units"], 1447)
+        self.assertAlmostEqual(breakeven["percent_of_run"], 46.677419, places=4)
         self.assertAlmostEqual(breakeven["retail_discount"], 0.45, places=6)
 
     def test_explicit_retail_discount_overrides_default(self):
@@ -444,6 +474,114 @@ class MissingTarifyTest(unittest.TestCase):
         result = calculate(dict(REFERENCE_INPUTS), params_no_editing)
         self.assertEqual(result["rows"]["редагування"]["razom"], 0.0)
         self.assertIn(("редагування", "простий"), result["missing_tarify"])
+
+
+class PaginationRoundHalfUpTest(unittest.TestCase):
+    """Округлення сторінок під кратність — round-half-up, НЕ банківське
+    round() Python (round half to even). round(22.5) в Python дає 22
+    (найближче ПАРНЕ), а нам завжди треба класичне round-half-up:
+    22,5 -> 23. Синтетичний формат із "круглими" числами, щоб влучити
+    точно в межу X,5: znakiv_stor=1000, зазор=0, множник=1,0,
+    знаки=360000 -> сторінки_сирі=360,0 рівно; n=360/16=22,5 рівно."""
+
+    def setUp(self):
+        self.params = {
+            **REFERENCE_PARAMS,
+            "general": {**REFERENCE_PARAMS["general"], "Зазор сторінковості": 0.0},
+            "formats": {
+                **REFERENCE_PARAMS["formats"],
+                "ТЕСТ/32": {"znakiv_stor": 1000.0, "zoshyt": 32.0, "price_zoshyt": 50.0},
+            },
+            "cover": {**REFERENCE_PARAMS["cover"], ("ТЕСТ/32", "Норма"): 50.0},
+            "zriz": {**REFERENCE_PARAMS["zriz"], "ТЕСТ/32": 20.0},
+        }
+        self.inputs = {**REFERENCE_INPUTS, "format": "ТЕСТ/32", "znaky": 360_000}
+
+    def test_half_boundary_rounds_up_not_to_even(self):
+        # Контроль: сирий Python round() на цій самій межі дав би 22
+        # (парне) — якщо цей assert колись почне падати, значить хтось
+        # замінив math.floor(x+0.5) на round() і регресія повернулась.
+        self.assertEqual(round(22.5), 22)
+
+        result = calculate(dict(self.inputs), self.params)
+        block2 = result["block2"]
+        self.assertIsNotNone(block2)
+        self.assertAlmostEqual(block2["storinky"], 368, places=2)  # 23 x 16, не 22 x 16=352
+        self.assertAlmostEqual(block2["zoshytiv"], 11.5, places=2)  # 368 / 32
+
+
+NAKLAD_1M_INPUTS_BASE = {
+    "zirka": "5★",
+    "complexity": "простий",
+    "znaky": 1_000_000,
+    "oblozhka": 0,
+    "efekty": 0,
+    "color_mode": "1+1 (ч/б)",
+    "effect": "Норма",
+    "has_zriz": False,
+    "naklad": 3100,
+    "avans": 0,
+}
+
+NAKLAD_1M_PARAMS = {
+    **REFERENCE_PARAMS,
+    "general": {**REFERENCE_PARAMS["general"], "Зазор сторінковості": 0.0},
+}
+
+
+class PaginationSnapshotTest(unittest.TestCase):
+    """Базовий "до"-знімок (1 000 000 знаків, зазор=0, множник=1,0) —
+    усі 6 комбінацій формат x переклад, перераховані під нову логіку
+    2026-09-16 і звірені вручну з користувачем перед комітом:
+
+      НЕ перекл. 84х108/32: сирі=775,1938 n=48,4496 round=48 підг=768 зош=24,0
+      НЕ перекл. 60х84/16:  сирі=675,6757 n=84,4595 round=84 підг=672 зош=42,0
+      НЕ перекл. 70х100/16: сирі=520,8333 n=65,1042 round=65 підг=520 зош=32,5
+      Перекл.    84х108/32: сирі=930,2326 n=58,1395 round=58 підг=928 зош=29,0
+      Перекл.    60х84/16:  сирі=810,8108 n=101,3514 round=101 підг=808 зош=50,5
+      Перекл.    70х100/16: сирі=625,0000 n=78,1250 round=78 підг=624 зош=39,0
+
+    Кратність — завжди половина фізичного зошита з params (16 при
+    зошиті=32, 8 при зошиті=16) — жодних хардкод-перевірок назви
+    формату в самому calculator.py.
+    """
+
+    def _storinky_zoshytiv(self, fmt, perekladna):
+        inputs = {**NAKLAD_1M_INPUTS_BASE, "format": fmt, "perekladna": perekladna}
+        result = calculate(dict(inputs), NAKLAD_1M_PARAMS)
+        block2 = result["block2"]
+        self.assertIsNotNone(block2)
+        return block2["storinky"], block2["zoshytiv"]
+
+    def test_not_translated_84x108_32(self):
+        storinky, zoshytiv = self._storinky_zoshytiv("84х108/32", False)
+        self.assertAlmostEqual(storinky, 768, places=2)
+        self.assertAlmostEqual(zoshytiv, 24.0, places=2)
+
+    def test_not_translated_60x84_16(self):
+        storinky, zoshytiv = self._storinky_zoshytiv("60х84/16", False)
+        self.assertAlmostEqual(storinky, 672, places=2)
+        self.assertAlmostEqual(zoshytiv, 42.0, places=2)
+
+    def test_not_translated_70x100_16(self):
+        storinky, zoshytiv = self._storinky_zoshytiv("70х100/16", False)
+        self.assertAlmostEqual(storinky, 520, places=2)
+        self.assertAlmostEqual(zoshytiv, 32.5, places=2)
+
+    def test_translated_84x108_32(self):
+        storinky, zoshytiv = self._storinky_zoshytiv("84х108/32", True)
+        self.assertAlmostEqual(storinky, 928, places=2)
+        self.assertAlmostEqual(zoshytiv, 29.0, places=2)
+
+    def test_translated_60x84_16(self):
+        storinky, zoshytiv = self._storinky_zoshytiv("60х84/16", True)
+        self.assertAlmostEqual(storinky, 808, places=2)
+        self.assertAlmostEqual(zoshytiv, 50.5, places=2)
+
+    def test_translated_70x100_16(self):
+        storinky, zoshytiv = self._storinky_zoshytiv("70х100/16", True)
+        self.assertAlmostEqual(storinky, 624, places=2)
+        self.assertAlmostEqual(zoshytiv, 39.0, places=2)
 
 
 class RoundTo9Test(unittest.TestCase):

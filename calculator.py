@@ -150,6 +150,10 @@ def _calculate_block2(inputs: dict, params: dict):
     """
     Друк (§6): блок + обкладинка_др + зріз.
 
+    Сторінки підганяються під кратність (round-half-up, не завжди
+    вгору) — зошитів тому може вийти з половиною (X,5), і блок
+    рахується прямим множенням на цю дробову кількість.
+
     Повертає None, якщо для обраної комбінації формат/ефект/наклад
     бракує якогось значення в майстер-таблиці (замість падіння).
     """
@@ -204,8 +208,24 @@ def _calculate_block2(inputs: dict, params: dict):
     )
 
     storinkovist_multiplier = _to_float(inputs.get("storinkovist_multiplier"), 1.0)
-    storinky = znaky_rozrah / znakiv_stor * (1 + zazor) * storinkovist_multiplier
-    zoshytiv = math.ceil(storinky / zoshyt_stor)
+    storinky_syri = znaky_rozrah / znakiv_stor * (1 + zazor) * storinkovist_multiplier
+
+    # Підгонка сторінок під кратність зошита — звичайне округлення
+    # (round-half-up), НЕ завжди вгору. Кратність = половина фізичного
+    # зошита (16 при зошиті=32, 8 при зошиті=16) — тому зошитів на
+    # Кроці 4 нижче може вийти X,0 або рівно X,5, і ніколи інакше.
+    # math.floor(x + 0.5) замість round(), бо round() у Python робить
+    # банківське округлення (round half to even): round(22.5) -> 22,
+    # а тут завжди потрібне класичне round-half-up: 22,5 -> 23.
+    kratnist = zoshyt_stor / 2
+    n = storinky_syri / kratnist
+    n_rounded = math.floor(n + 0.5)
+    storinky = n_rounded * kratnist
+
+    # Зошитів рахуються прямим діленням, БЕЗ округлення вгору — може
+    # вийти пів-зошита (X,5), і саме на цю дробову кількість множимо
+    # ціну зошита нижче, без додаткового округлення.
+    zoshytiv = round(storinky / zoshyt_stor, 1)
     blok = zoshytiv * price_zoshyt * k_tyr * k_kolir
     obkladynka_dr = cena_obkladynky * k_tyr
     zriz = cena_zrizu

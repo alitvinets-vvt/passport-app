@@ -730,7 +730,7 @@ with tab_single:
                 ]
                 _render_table(print_rows, total_labels={"Друк за 1 прим., разом"})
                 st.caption(
-                    f"Сторінок: {block2['storinky']:.1f} · Зошитів: {block2['zoshytiv']} · "
+                    f"Сторінок: {block2['storinky']:.0f} · Зошитів: {block2['zoshytiv']:.1f} · "
                     f"Тир: {block2['tier']['tier']} (k={block2['tier']['k']}) · "
                     f"K_колір: {block2['k_kolir']}"
                 )

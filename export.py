@@ -132,8 +132,8 @@ def export_to_xlsx(inputs: dict, result: dict) -> io.BytesIO:
         row += 1
     else:
         print_rows = [
-            ("Сторінки", block2["storinky"], "0.0"),
-            ("Зошити", block2["zoshytiv"], INT_FORMAT),
+            ("Сторінки", block2["storinky"], INT_FORMAT),
+            ("Зошити", block2["zoshytiv"], "0.0"),
             ("Тир", f"{block2['tier']['tier']} (k={block2['tier']['k']})", None),
             ("Блок (друк)", block2["blok"], MONEY_FORMAT),
             ("Обкладинка (друк)", block2["obkladynka_dr"], MONEY_FORMAT),
