@@ -226,6 +226,82 @@ class CalculateStorinkovistMultiplierTest(unittest.TestCase):
         self.assertEqual(self.result["rrc"], 4359)
 
 
+EFEKTY_INPUTS = {
+    **REFERENCE_INPUTS,
+    "oblozhka": 14000,
+    "efekty": 2000,
+}
+
+
+class CalculateInshiVytratyWithEfektyTest(unittest.TestCase):
+    """"Інші витрати" тепер рахуються від чотирьох виробничих ДП-статей
+    (редагування + коректура + обкладинка + ефекти обкладинки), а не
+    трьох — ефекти обкладинки раніше випадали з бази §5/§7.
+
+    Той самий контрольний приклад (700 000 знаків / простий / не
+    перекладна / 84х108/32), але з ненульовими обкладинка=14000 і
+    ефекти=2000 (реально спостережена комбінація з "Плановий_Паспорт1").
+    Звірено вручну з користувачем 2026-09-16 перед написанням тесту:
+
+      редагування, разом = 38 818,18
+      коректура, разом   = 11 645,45
+      обкладинка, разом  = 22 181,82
+      ефекти, разом      =  3 168,83
+
+      база_нова = 38818,18+11645,45+22181,82+3168,83 = 75 814,29
+      інші_нова = 0,12 x 75814,29                    =  9 097,71
+      ОРИГІНАЛ-МАКЕТ = (сума всіх razom) + інші_нова  = 84 912,00 (рівно)
+
+    (Стара формула без ефектів у базі давала інші=8717,45 і
+    ОРИГІНАЛ-МАКЕТ=84531,74 — свідомо застаріле й більше не вірне.)
+    """
+
+    def setUp(self):
+        self.result = calculate(dict(EFEKTY_INPUTS), REFERENCE_PARAMS)
+
+    def test_rows_unchanged_by_this_fix(self):
+        rows = self.result["rows"]
+        self.assertAlmostEqual(rows["редагування"]["razom"], 38818.18, places=2)
+        self.assertAlmostEqual(rows["коректура"]["razom"], 11645.45, places=2)
+        self.assertAlmostEqual(rows["обкладинка"]["razom"], 22181.82, places=2)
+        self.assertAlmostEqual(rows["ефекти"]["razom"], 3168.83, places=2)
+
+    def test_inshi_includes_efekty(self):
+        self.assertAlmostEqual(self.result["inshi"], 9097.71, places=2)
+
+    def test_oryhinal_maket(self):
+        self.assertAlmostEqual(self.result["oryhinal_maket"], 84912.00, places=2)
+
+
+class InshiRowBreakdownTest(unittest.TestCase):
+    """"Інші витрати" розкладені на 4 колонки замість 0.00/0.00/0.00 +
+    тільки "Разом":
+
+      тіло_інші    = разом_інші / 1,22
+      ЄСВ_інші     = тіло_інші x 0,22
+      чистими_інші = тіло_інші x 0,77
+
+    tilo+esv має дорівнювати razom (арифметична тотожність, не просто
+    "приблизно правильно") — перевірено з точністю до копійки на
+    основному контрольному прикладі (56 519,27)."""
+
+    def setUp(self):
+        self.result = calculate(dict(REFERENCE_INPUTS), REFERENCE_PARAMS)
+        self.row = self.result["inshi_row"]
+
+    def test_razom_matches_scalar_inshi(self):
+        self.assertAlmostEqual(self.row["razom"], self.result["inshi"], places=6)
+        self.assertAlmostEqual(self.row["razom"], 6055.64, places=2)
+
+    def test_tilo_plus_esv_equals_razom_exactly(self):
+        self.assertAlmostEqual(self.row["tilo"] + self.row["esv"], self.row["razom"], places=6)
+
+    def test_breakdown_values(self):
+        self.assertAlmostEqual(self.row["tilo"], 4963.64, places=2)
+        self.assertAlmostEqual(self.row["esv"], 1092.00, places=2)
+        self.assertAlmostEqual(self.row["chysto"], 3822.00, places=2)
+
+
 class CompareNakladyTest(unittest.TestCase):
     """Фіча "Порівняння накладів" — default_naklady()/compare_naklady().
 
@@ -268,6 +344,13 @@ class CompareNakladyTest(unittest.TestCase):
     def test_oryhinal_maket_independent_of_naklad(self):
         oms = {r["result"]["oryhinal_maket"] for r in self.rows}
         self.assertEqual(len(oms), 1)
+
+    def test_breakeven_present_for_every_naklad_and_matches_reference_at_t3(self):
+        for row in self.rows:
+            self.assertIsNotNone(row["result"]["breakeven"], row["naklad"])
+        breakeven_t3 = next(r for r in self.rows if r["naklad"] == 3100.0)["result"]["breakeven"]
+        self.assertEqual(breakeven_t3["units"], 1445)
+        self.assertAlmostEqual(breakeven_t3["percent_of_run"], 46.612903, places=4)
 
 
 class BreakevenPointTest(unittest.TestCase):

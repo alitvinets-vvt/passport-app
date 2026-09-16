@@ -109,8 +109,12 @@ def export_to_xlsx(inputs: dict, result: dict) -> io.BytesIO:
         ws.cell(row=row, column=5, value=r["razom"]).number_format = MONEY_FORMAT
         row += 1
 
+    inshi_row = result["inshi_row"]
     ws.cell(row=row, column=1, value="Інші витрати (12%)")
-    ws.cell(row=row, column=5, value=result["inshi"]).number_format = MONEY_FORMAT
+    ws.cell(row=row, column=2, value=inshi_row["chysto"]).number_format = MONEY_FORMAT
+    ws.cell(row=row, column=3, value=inshi_row["tilo"]).number_format = MONEY_FORMAT
+    ws.cell(row=row, column=4, value=inshi_row["esv"]).number_format = MONEY_FORMAT
+    ws.cell(row=row, column=5, value=inshi_row["razom"]).number_format = MONEY_FORMAT
     row += 1
 
     ws.cell(row=row, column=1, value="ОРИГІНАЛ-МАКЕТ").font = TOTAL_FONT

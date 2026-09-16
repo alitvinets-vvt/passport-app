@@ -351,15 +351,6 @@ with col1:
         ),
     )
     naklad = st.number_input("Наклад", min_value=100, value=3100, step=100)
-    retail_discount_pct = st.number_input(
-        "Знижка рітейлу, %", min_value=0, max_value=100,
-        value=round(get_retail_discount(params) * 100), step=1,
-        help=(
-            "Частка РРЦ, яку забирає рітейл. Впливає тільки на точку "
-            "беззбитковості — не на сам розрахунок РРЦ. За замовчуванням — "
-            "значення з майстер-таблиці (блок ЗАГАЛЬНІ)."
-        ),
-    )
 
 with col2:
     st.markdown('<p class="form-group-title">Друк та оформлення</p>', unsafe_allow_html=True)
@@ -380,6 +371,15 @@ with col2:
         help=_suma_help,
     )
     avans = st.number_input("Аванс за текст, грн", min_value=0, value=0, step=1000)
+    retail_discount_pct = st.number_input(
+        "Знижка рітейлу, %", min_value=0, max_value=100,
+        value=round(get_retail_discount(params) * 100), step=1,
+        help=(
+            "Частка РРЦ, яку забирає рітейл. Впливає тільки на точку "
+            "беззбитковості — не на сам розрахунок РРЦ. За замовчуванням — "
+            "значення з майстер-таблиці (блок ЗАГАЛЬНІ)."
+        ),
+    )
 
 def _display_value(value, suffix=""):
     if value is None:
@@ -429,6 +429,13 @@ def _render_comparison_table(rows):
             return None
         return om_unit + druk
 
+    def _breakeven_label(r):
+        breakeven = r["result"]["breakeven"]
+        if breakeven is None:
+            return "—"
+        units_label = f"{breakeven['units']:,}".replace(",", " ")
+        return f"{units_label} прим. ({breakeven['percent_of_run']:.1f}%)"
+
     headers = []
     for r in rows:
         band = r["tier"]["band"] if r["tier"] else "—"
@@ -453,6 +460,7 @@ def _render_comparison_table(rows):
             lambda r: _fmt(_sobivartist(r)) if _sobivartist(r) is not None else "—",
             False,
         ),
+        ("Точка беззбитковості", _breakeven_label, False),
         (
             "РРЦ, грн",
             lambda r: str(r["result"]["rrc"]) if r["result"]["rrc"] is not None else "—",
@@ -636,21 +644,28 @@ with tab_single:
                         "Разом, грн": _fmt(row["razom"]),
                     }
                 )
+            inshi_row = result["inshi_row"]
             table_rows.append(
                 {
                     "Стаття": "Інші витрати (12%)",
-                    "Чистими, грн": _fmt(0),
-                    "Тіло, грн": _fmt(0),
-                    "ЄСВ, грн": _fmt(0),
-                    "Разом, грн": _fmt(result["inshi"]),
+                    "Чистими, грн": _fmt(inshi_row["chysto"]),
+                    "Тіло, грн": _fmt(inshi_row["tilo"]),
+                    "ЄСВ, грн": _fmt(inshi_row["esv"]),
+                    "Разом, грн": _fmt(inshi_row["razom"]),
                 }
             )
             table_rows.append(
                 {
                     "Стаття": "Разом",
-                    "Чистими, грн": _fmt(sum(r["chysto"] for r in result["rows"].values())),
-                    "Тіло, грн": _fmt(sum(r["tilo"] for r in result["rows"].values())),
-                    "ЄСВ, грн": _fmt(sum(r["esv"] for r in result["rows"].values())),
+                    "Чистими, грн": _fmt(
+                        sum(r["chysto"] for r in result["rows"].values()) + inshi_row["chysto"]
+                    ),
+                    "Тіло, грн": _fmt(
+                        sum(r["tilo"] for r in result["rows"].values()) + inshi_row["tilo"]
+                    ),
+                    "ЄСВ, грн": _fmt(
+                        sum(r["esv"] for r in result["rows"].values()) + inshi_row["esv"]
+                    ),
                     "Разом, грн": _fmt(result["oryhinal_maket"]),
                 }
             )

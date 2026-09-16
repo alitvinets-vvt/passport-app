@@ -106,14 +106,31 @@ def _calculate_block1(inputs: dict, params: dict) -> dict:
         "ефекти": _dp_row(efekty_chysto, tilo_divisor, esv_rate),
     }
 
-    # «Інші» рахуються від сум РАЗОМ трьох статей (редагування, коректура,
-    # обкладинка) — переклад, аванс і ефекти в цю базу не входять (§5).
+    # «Інші» рахуються від сум РАЗОМ чотирьох виробничих ДП-статей
+    # (редагування, коректура, обкладинка, ефекти обкладинки) — переклад
+    # і аванс (АЛД-статті) у цю базу не входять (§5).
     inshi_baza = (
         rows["редагування"]["razom"]
         + rows["коректура"]["razom"]
         + rows["обкладинка"]["razom"]
+        + rows["ефекти"]["razom"]
     )
     inshi = inshi_rate * inshi_baza
+
+    # Розкладка "Інші" на тіло/ЄСВ/чистими — той самий податковий
+    # взаємозв'язок, що й у _dp_row(), але у зворотному напрямку: тут
+    # відома сума РАЗОМ (= inshi), а не чистими, тому тіло виводиться
+    # з розом (тіло x (1+esv_rate) = razom), а чистими — довідково
+    # (скільки з цього тіла лишається "на руки" після ПДФО/ВЗ).
+    inshi_tilo = inshi / (1 + esv_rate)
+    inshi_esv = inshi_tilo * esv_rate
+    inshi_chysto = inshi_tilo * tilo_divisor
+    inshi_row = {
+        "chysto": inshi_chysto,
+        "tilo": inshi_tilo,
+        "esv": inshi_esv,
+        "razom": inshi,
+    }
 
     oryhinal_maket = sum(r["razom"] for r in rows.values()) + inshi
 
@@ -123,6 +140,7 @@ def _calculate_block1(inputs: dict, params: dict) -> dict:
         "tarif_redaguvannya": tarif_redaguvannya,
         "rows": rows,
         "inshi": inshi,
+        "inshi_row": inshi_row,
         "oryhinal_maket": oryhinal_maket,
         "missing_tarify": missing_tarify,
     }
@@ -221,7 +239,10 @@ def calculate(inputs: dict, params: dict) -> dict:
 
     Повертає:
       znaky_rozrah, rows (розбивка по статтях з податками),
-      inshi, oryhinal_maket,
+      inshi (сума, = inshi_row["razom"]),
+      inshi_row (та сама сума розкладена на chysto/tilo/esv/razom —
+        тіло виводиться НАЗАД із razom, чистими тут довідкове),
+      oryhinal_maket,
       block2 (деталі друку: сторінки/зошитів/блок/обкладинка_др/зріз,
         None, якщо для обраної комбінації бракує даних),
       druk_za_sht (= block2["razom"], або None),
@@ -270,6 +291,7 @@ def calculate(inputs: dict, params: dict) -> dict:
         "tarif_redaguvannya": block1["tarif_redaguvannya"],
         "rows": block1["rows"],
         "inshi": block1["inshi"],
+        "inshi_row": block1["inshi_row"],
         "oryhinal_maket": block1["oryhinal_maket"],
         "block2": block2,
         "druk_za_sht": druk_za_sht,
