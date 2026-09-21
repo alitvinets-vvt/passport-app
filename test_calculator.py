@@ -19,7 +19,15 @@ Google Sheets: params — статичний фікстур, щоб резуль
 
 import unittest
 
-from calculator import calculate, compare_naklady, default_naklady, get_retail_discount
+from calculator import (
+    DEFAULT_FACT_NAKLADY,
+    calculate,
+    calculate_fact,
+    compare_naklady,
+    compare_naklady_fact,
+    default_naklady,
+    get_retail_discount,
+)
 
 REFERENCE_PARAMS = {
     "translation": {"5★": 125.0, "4★": 120.0, "3★": 105.0, "2★": 120.0, "1★": 90.0},
@@ -597,6 +605,121 @@ class RoundTo9Test(unittest.TestCase):
         self.assertEqual(_round_to_9(244), 249)
         self.assertEqual(_round_to_9(254), 249)
         self.assertEqual(_round_to_9(260), 259)
+
+
+FACT_INPUTS = {
+    "oryhinal_maket": 308150.36,
+    "format": "84х108/32",
+    "storinky": 320,
+    "znaky": 700_000,  # довідкове, не бере участі в розрахунку
+    "color_mode": "1+1 (ч/б)",
+    "effect": "Норма",
+    "has_zriz": False,
+}
+
+
+class CalculateFactTest(unittest.TestCase):
+    """Фіча "Факт → наклади" — calculate_fact()/compare_naklady_fact().
+
+    Еталон: ОРИГІНАЛ-МАКЕТ=308150,36 грн (реальна сума з фактичного
+    паспорта «Академія Арканів»), формат 84х108/32, сторінки=320
+    (реальні, БЕЗ підгонки під кратність), ч/б, ефект Норма, без
+    зрізу, наклади 2100/3100/5100/7100 — звірено вручну з
+    користувачем перед комітом (2026-09-21):
+
+      зошитів = 320 / 32 = 10,0 (пряме ділення, однакове для всіх накладів,
+                бо сторінки в цій фічі фіксовані, не залежать від накладу)
+
+      наклад=2100 (T2, k=1,09): блок=545,00 обкл_др=54,50 друк=599,50
+        собівартість_1=746,2383  РРЦ=2909  беззбитковість=980 (46,67%)
+      наклад=3100 (T3, k=1,00): блок=500,00 обкл_др=50,00 друк=550,00
+        собівартість_1=649,4033  РРЦ=2529  беззбитковість=1448 (46,71%)
+      наклад=5100 (T4, k=0,915): блок=457,50 обкл_др=45,75 друк=503,25
+        собівартість_1=563,6716  РРЦ=2199  беззбитковість=2377 (46,61%)
+      наклад=7100 (T5, k=0,866): блок=433,00 обкл_др=43,30 друк=476,30
+        собівартість_1=519,7015  РРЦ=2029  беззбитковість=3307 (46,58%)
+
+    Знижка рітейлу — safe-дефолт 45% (REFERENCE_PARAMS не задає
+    "Знижка рітейлу" в ЗАГАЛЬНІ, так само як в інших тестах цього файлу).
+    """
+
+    def setUp(self):
+        self.rows = compare_naklady_fact(dict(FACT_INPUTS), REFERENCE_PARAMS, DEFAULT_FACT_NAKLADY)
+
+    def test_default_fact_naklady_is_fixed_four_tiers(self):
+        # На відміну від default_naklady() (§Порівняння накладів, 5 тирів
+        # з якорями), тут навмисно фіксований список без найменшого тиру.
+        self.assertEqual(DEFAULT_FACT_NAKLADY, [2100, 3100, 5100, 7100])
+
+    def test_oryhinal_maket_is_taken_directly_not_calculated(self):
+        for row in self.rows:
+            self.assertAlmostEqual(row["result"]["oryhinal_maket"], 308150.36, places=2)
+
+    def test_storinky_used_as_is_without_rounding_to_multiple(self):
+        # 320 не кратне жодній підгонці Планового Паспорта (кратність
+        # там 16) — і саме тому, якщо підгонка застосувалась би, зошитів
+        # вийшло б інше число. Тут має лишитись рівно 320/32=10,0.
+        for row in self.rows:
+            block2 = row["result"]["block2"]
+            self.assertEqual(block2["storinky"], 320)
+            self.assertAlmostEqual(block2["zoshytiv"], 10.0, places=2)
+
+    def test_tiers_and_druk_za_sht(self):
+        expected = {
+            2100.0: ("T2", 599.50),
+            3100.0: ("T3", 550.00),
+            5100.0: ("T4", 503.25),
+            7100.0: ("T5", 476.30),
+        }
+        for row in self.rows:
+            tier_label, druk = expected[row["naklad"]]
+            self.assertEqual(row["tier"]["tier"], tier_label)
+            self.assertAlmostEqual(row["result"]["druk_za_sht"], druk, places=2)
+
+    def test_rrc_per_naklad(self):
+        expected = {2100.0: 2909, 3100.0: 2529, 5100.0: 2199, 7100.0: 2029}
+        for row in self.rows:
+            self.assertEqual(row["result"]["rrc"], expected[row["naklad"]])
+
+    def test_breakeven_per_naklad(self):
+        expected = {
+            2100.0: (980, 46.666667),
+            3100.0: (1448, 46.709677),
+            5100.0: (2377, 46.607843),
+            7100.0: (3307, 46.577465),
+        }
+        for row in self.rows:
+            units, pct = expected[row["naklad"]]
+            breakeven = row["result"]["breakeven"]
+            self.assertIsNotNone(breakeven, row["naklad"])
+            self.assertEqual(breakeven["units"], units)
+            self.assertAlmostEqual(breakeven["percent_of_run"], pct, places=4)
+
+    def test_rrc_non_increasing_as_naklad_grows(self):
+        rrcs = [r["result"]["rrc"] for r in self.rows]
+        for earlier, later in zip(rrcs, rrcs[1:]):
+            self.assertGreaterEqual(earlier, later)
+
+    def test_naklad_3100_matches_manual_single_calculate_fact_call(self):
+        result = calculate_fact({**FACT_INPUTS, "naklad": 3100}, REFERENCE_PARAMS)
+        self.assertAlmostEqual(result["oryhinal_maket"], 308150.36, places=2)
+        self.assertAlmostEqual(result["druk_za_sht"], 550.00, places=2)
+        self.assertEqual(result["rrc"], 2529)
+
+    def test_missing_format_data_returns_none_block2_not_crash(self):
+        result = calculate_fact(
+            {**FACT_INPUTS, "naklad": 3100, "format": "неіснуючий формат"}, REFERENCE_PARAMS
+        )
+        self.assertIsNone(result["block2"])
+        self.assertIsNone(result["rrc"])
+        self.assertIsNone(result["breakeven"])
+        self.assertAlmostEqual(result["oryhinal_maket"], 308150.36, places=2)
+
+    def test_explicit_retail_discount_override(self):
+        result = calculate_fact(
+            {**FACT_INPUTS, "naklad": 3100, "retail_discount": 0.30}, REFERENCE_PARAMS
+        )
+        self.assertAlmostEqual(result["breakeven"]["retail_discount"], 0.30, places=6)
 
 
 if __name__ == "__main__":

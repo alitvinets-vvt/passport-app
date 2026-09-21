@@ -188,3 +188,113 @@ def export_to_xlsx(inputs: dict, result: dict) -> io.BytesIO:
     wb.save(buffer)
     buffer.seek(0)
     return buffer
+
+
+def export_fact_to_xlsx(inputs: dict, rows: list) -> io.BytesIO:
+    """Експорт фічі "Факт → наклади": шапка з поміткою, що ОРИГІНАЛ-МАКЕТ —
+    ФАКТИЧНА сума (не розрахована з тарифів), параметри книги і таблиця
+    порівняння накладів (рядки = показники, колонки = наклади) — та сама
+    структура, що в `_render_comparison_table()` UI.
+
+    inputs: project_index/project_name (ручна ідентифікація), oryhinal_maket,
+      format, storinky, znaky (довідкове), color_mode, effect, has_zriz.
+    rows: результат compare_naklady_fact() —
+      [{"naklad", "tier" чи None, "result": calculate_fact(...)}, ...]."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Факт → наклади"
+
+    row = 1
+
+    ws.cell(row=row, column=1, value="Індекс проєкту:")
+    ws.cell(row=row, column=2, value=inputs.get("project_index", ""))
+    row += 1
+    ws.cell(row=row, column=1, value="Назва проєкту:")
+    ws.cell(row=row, column=2, value=inputs.get("project_name", ""))
+    row += 1
+
+    note_cell = ws.cell(
+        row=row, column=1,
+        value="⚠ ОРИГІНАЛ-МАКЕТ — ФАКТИЧНА сума (введена напряму), не планова з тарифів.",
+    )
+    note_cell.font = Font(italic=True, color=BORDO)
+    row += 2
+
+    row = _write_section_title(ws, row, "Параметри книги", span=2 + len(rows))
+    book_params = [
+        ("ОРИГІНАЛ-МАКЕТ, грн (факт)", inputs.get("oryhinal_maket"), MONEY_FORMAT),
+        ("Формат", inputs.get("format"), None),
+        ("Сторінки (реальні, з верстки)", inputs.get("storinky"), INT_FORMAT),
+        ("Знаки (довідково)", inputs.get("znaky"), INT_FORMAT),
+        ("Колірність блоку", inputs.get("color_mode"), None),
+        ("Ефекти обкладинки", inputs.get("effect"), None),
+        ("Кольоровий зріз", "Так" if inputs.get("has_zriz") else "Ні", None),
+    ]
+    for label, value, fmt in book_params:
+        ws.cell(row=row, column=1, value=label)
+        cell = ws.cell(row=row, column=2, value=value)
+        if fmt and isinstance(value, (int, float)) and not isinstance(value, bool):
+            cell.number_format = fmt
+        row += 1
+
+    row += 1
+
+    row = _write_section_title(ws, row, "Порівняння накладів", span=1 + len(rows))
+
+    def _om_per_unit(r):
+        return r["result"]["oryhinal_maket"] / r["naklad"] if r["naklad"] else None
+
+    def _sobivartist(r):
+        druk = r["result"]["druk_za_sht"]
+        om_unit = _om_per_unit(r)
+        if druk is None or om_unit is None:
+            return None
+        return om_unit + druk
+
+    ws.cell(row=row, column=1, value="Показник").font = HEADER_FONT
+    for col, r in enumerate(rows, start=2):
+        band = r["tier"]["band"] if r["tier"] else "—"
+        cell = ws.cell(row=row, column=col, value=f"{int(r['naklad'])} ({band})")
+        cell.font = HEADER_FONT
+    row += 1
+
+    metric_rows = [
+        ("Наклад", lambda r: int(r["naklad"]), INT_FORMAT),
+        ("Тир", lambda r: r["tier"]["tier"] if r["tier"] else "—", None),
+        ("ОРИГІНАЛ-МАКЕТ на 1 прим., грн", lambda r: _om_per_unit(r), MONEY_FORMAT),
+        ("Друк за 1 прим., грн", lambda r: r["result"]["druk_za_sht"], MONEY_FORMAT),
+        ("Собівартість 1 прим., грн", lambda r: _sobivartist(r), MONEY_FORMAT),
+        (
+            "Точка беззбитковості, прим.",
+            lambda r: r["result"]["breakeven"]["units"] if r["result"]["breakeven"] else None,
+            INT_FORMAT,
+        ),
+        (
+            "Точка беззбитковості, % тиражу",
+            lambda r: r["result"]["breakeven"]["percent_of_run"] if r["result"]["breakeven"] else None,
+            "0.0",
+        ),
+        ("РРЦ, грн", lambda r: r["result"]["rrc"], INT_FORMAT),
+    ]
+    for label, fn, fmt in metric_rows:
+        is_rrc = label.startswith("РРЦ")
+        label_cell = ws.cell(row=row, column=1, value=label)
+        if is_rrc:
+            label_cell.font = TOTAL_FONT
+        for col, r in enumerate(rows, start=2):
+            value = fn(r)
+            cell = ws.cell(row=row, column=col, value=value)
+            if fmt and value is not None:
+                cell.number_format = fmt
+            if is_rrc:
+                cell.font = TOTAL_FONT
+        row += 1
+
+    widths = [30] + [16] * len(rows)
+    for i, w in enumerate(widths, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    return buffer

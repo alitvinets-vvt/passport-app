@@ -146,9 +146,76 @@ def _calculate_block1(inputs: dict, params: dict) -> dict:
     }
 
 
+def _print_calc(storinky: float, fmt: str, naklad: float, color_mode: str,
+                 effect: str, has_zriz: bool, params: dict):
+    """Друк (§6) за ГОТОВИМИ сторінками: блок + обкладинка_др + зріз.
+
+    Спільна для Планового Паспорта (де `storinky` вже підігнані під
+    кратність зошита в `_calculate_block2`) і фічі "Факт → наклади"
+    (де `storinky` — реальна кількість з верстки, без підгонки).
+
+    Зошитів рахуються прямим діленням `storinky` на фізичний зошит
+    формату, БЕЗ округлення вгору — може вийти пів-зошита (X,5), і
+    саме на цю дробову кількість множимо ціну зошита нижче.
+
+    Повертає None, якщо для обраної комбінації формат/ефект/наклад
+    бракує якогось значення в майстер-таблиці (замість падіння).
+    """
+    general = params.get("general", {})
+
+    fmt_data = params.get("formats", {}).get(fmt)
+    if not fmt_data:
+        return None
+
+    zoshyt_stor = fmt_data.get("zoshyt")
+    price_zoshyt = fmt_data.get("price_zoshyt")
+    if zoshyt_stor is None or price_zoshyt is None or zoshyt_stor <= 0:
+        return None
+
+    tier = get_tier_for_naklad(params.get("tiers", []), _to_float(naklad))
+    k_tyr = tier.get("k") if tier else None
+    if k_tyr is None:
+        return None
+
+    if "4+4" in (color_mode or ""):
+        k_kolir = general.get("Множник блоку 4+4")
+        if k_kolir is None:
+            return None
+    else:
+        k_kolir = 1.0
+
+    cena_obkladynky = params.get("cover", {}).get((fmt, effect))
+    if cena_obkladynky is None:
+        return None
+
+    if has_zriz:
+        cena_zrizu = params.get("zriz", {}).get(fmt)
+        if cena_zrizu is None:
+            return None
+    else:
+        cena_zrizu = 0.0
+
+    zoshytiv = round(storinky / zoshyt_stor, 1)
+    blok = zoshytiv * price_zoshyt * k_tyr * k_kolir
+    obkladynka_dr = cena_obkladynky * k_tyr
+    zriz = cena_zrizu
+
+    return {
+        "storinky": storinky,
+        "zoshytiv": zoshytiv,
+        "tier": tier,
+        "k_kolir": k_kolir,
+        "blok": blok,
+        "obkladynka_dr": obkladynka_dr,
+        "zriz": zriz,
+        "razom": blok + obkladynka_dr + zriz,
+    }
+
+
 def _calculate_block2(inputs: dict, params: dict):
     """
-    Друк (§6): блок + обкладинка_др + зріз.
+    Друк (§6) Планового Паспорта: сторінки з знаків + підгонка під
+    кратність, тоді спільна `_print_calc()`.
 
     Сторінки підганяються під кратність (round-half-up, не завжди
     вгору) — зошитів тому може вийти з половиною (X,5), і блок
@@ -166,8 +233,7 @@ def _calculate_block2(inputs: dict, params: dict):
 
     znakiv_stor = fmt_data.get("znakiv_stor")
     zoshyt_stor = fmt_data.get("zoshyt")
-    price_zoshyt = fmt_data.get("price_zoshyt")
-    if znakiv_stor is None or zoshyt_stor is None or price_zoshyt is None:
+    if znakiv_stor is None or zoshyt_stor is None:
         return None
     if znakiv_stor <= 0 or zoshyt_stor <= 0:
         return None
@@ -175,31 +241,6 @@ def _calculate_block2(inputs: dict, params: dict):
     zazor = general.get("Зазор сторінковості")
     if zazor is None:
         return None
-
-    tier = get_tier_for_naklad(params.get("tiers", []), _to_float(inputs.get("naklad")))
-    k_tyr = tier.get("k") if tier else None
-    if k_tyr is None:
-        return None
-
-    color_mode = inputs.get("color_mode", "")
-    if "4+4" in color_mode:
-        k_kolir = general.get("Множник блоку 4+4")
-        if k_kolir is None:
-            return None
-    else:
-        k_kolir = 1.0
-
-    effect = inputs.get("effect")
-    cena_obkladynky = params.get("cover", {}).get((fmt, effect))
-    if cena_obkladynky is None:
-        return None
-
-    if inputs.get("has_zriz"):
-        cena_zrizu = params.get("zriz", {}).get(fmt)
-        if cena_zrizu is None:
-            return None
-    else:
-        cena_zrizu = 0.0
 
     znaky_rozrah = _to_float(inputs.get("znaky")) * (
         _to_float(general.get("Коеф. перекладу"), 1.2)
@@ -222,24 +263,10 @@ def _calculate_block2(inputs: dict, params: dict):
     n_rounded = math.floor(n + 0.5)
     storinky = n_rounded * kratnist
 
-    # Зошитів рахуються прямим діленням, БЕЗ округлення вгору — може
-    # вийти пів-зошита (X,5), і саме на цю дробову кількість множимо
-    # ціну зошита нижче, без додаткового округлення.
-    zoshytiv = round(storinky / zoshyt_stor, 1)
-    blok = zoshytiv * price_zoshyt * k_tyr * k_kolir
-    obkladynka_dr = cena_obkladynky * k_tyr
-    zriz = cena_zrizu
-
-    return {
-        "storinky": storinky,
-        "zoshytiv": zoshytiv,
-        "tier": tier,
-        "k_kolir": k_kolir,
-        "blok": blok,
-        "obkladynka_dr": obkladynka_dr,
-        "zriz": zriz,
-        "razom": blok + obkladynka_dr + zriz,
-    }
+    return _print_calc(
+        storinky, fmt, inputs.get("naklad"), inputs.get("color_mode", ""),
+        inputs.get("effect"), bool(inputs.get("has_zriz")), params,
+    )
 
 
 def calculate(inputs: dict, params: dict) -> dict:
@@ -319,6 +346,97 @@ def calculate(inputs: dict, params: dict) -> dict:
         "breakeven": breakeven,
         "missing_tarify": block1["missing_tarify"],
     }
+
+
+DEFAULT_FACT_NAKLADY = [2100, 3100, 5100, 7100]
+
+
+def calculate_fact(inputs: dict, params: dict) -> dict:
+    """
+    Розрахунок РРЦ для фічі "Факт → наклади" — на основі ГОТОВОЇ суми
+    оригінал-макета (з фактичного паспорта чи введеної вручну), а не
+    розрахованої з тарифів.
+
+    На відміну від calculate():
+      1) oryhinal_maket береться напряму з inputs["oryhinal_maket"],
+         Блок 1 (статті/тарифи) тут не рахується взагалі;
+      2) сторінки беруться напряму з inputs["storinky"] — реальна
+         кількість з верстки, БЕЗ підгонки під кратність зошита.
+
+    Друк/РРЦ/точка беззбитковості рахуються тим самим шляхом, що й у
+    calculate() — через спільну _print_calc().
+
+    inputs: oryhinal_maket, format, storinky, color_mode, effect,
+      has_zriz, naklad, retail_discount (опційно, як у calculate()).
+
+    Повертає: oryhinal_maket, storinky, block2 (= _print_calc() чи
+      None), druk_za_sht, rrc, breakeven — та сама форма ключів, що й
+      у calculate(), тільки без znaky_rozrah/rows/inshi/missing_tarify
+      (Блоку 1 тут немає).
+    """
+    general = params.get("general", {})
+    oryhinal_maket = _to_float(inputs.get("oryhinal_maket"))
+    storinky = _to_float(inputs.get("storinky"))
+    naklad = _to_float(inputs.get("naklad"))
+
+    block2 = _print_calc(
+        storinky, inputs.get("format"), naklad, inputs.get("color_mode", ""),
+        inputs.get("effect"), bool(inputs.get("has_zriz")), params,
+    )
+    druk_za_sht = block2["razom"] if block2 else None
+
+    rrc = None
+    if druk_za_sht is not None and naklad:
+        k_narinka = _to_float(general.get("Націнка k"), 3.9)
+        sobivartist_1 = oryhinal_maket / naklad + druk_za_sht
+        rrc = _round_to_9(k_narinka * sobivartist_1)
+
+    retail_discount = inputs.get("retail_discount")
+    retail_discount = (
+        get_retail_discount(params) if retail_discount is None else _to_float(retail_discount)
+    )
+
+    breakeven = None
+    if rrc is not None and druk_za_sht is not None and naklad:
+        dohid_na_1_prym = rrc * (1 - retail_discount)
+        if dohid_na_1_prym > 0:
+            povna_sobivartist = oryhinal_maket + druk_za_sht * naklad
+            units = math.ceil(povna_sobivartist / dohid_na_1_prym)
+            breakeven = {
+                "units": units,
+                "percent_of_run": units / naklad * 100,
+                "retail_discount": retail_discount,
+            }
+
+    return {
+        "oryhinal_maket": oryhinal_maket,
+        "storinky": storinky,
+        "block2": block2,
+        "druk_za_sht": druk_za_sht,
+        "rrc": rrc,
+        "breakeven": breakeven,
+    }
+
+
+def compare_naklady_fact(inputs: dict, params: dict, naklady: list) -> list:
+    """Той самий принцип, що compare_naklady(), тільки навколо
+    calculate_fact() — для таблиці порівняння накладів у фічі
+    "Факт → наклади".
+
+    Повертає список у тому самому порядку, що й `naklady`:
+      [{"naklad": ..., "tier": {...} чи None, "result": calculate_fact(...)}, ...]
+    """
+    rows = []
+    for naklad in naklady:
+        row_inputs = {**inputs, "naklad": naklad}
+        result = calculate_fact(row_inputs, params)
+        tier = (
+            result["block2"]["tier"]
+            if result["block2"]
+            else get_tier_for_naklad(params.get("tiers", []), naklad)
+        )
+        rows.append({"naklad": naklad, "tier": tier, "result": result})
+    return rows
 
 
 def default_naklady(tiers: list) -> list:
