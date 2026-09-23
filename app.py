@@ -674,6 +674,30 @@ with tab_plan:
                 lambda r: str(r["result"]["rrc"]) if r["result"]["rrc"] is not None else "—",
                 True,
             ),
+            (
+                "Маржа, %",
+                lambda r: (
+                    f"{r['result']['channel_financials']['marzha'] * 100:.1f}"
+                    if r["result"]["channel_financials"] is not None else "—"
+                ),
+                False,
+            ),
+            (
+                "Рентабельність, %",
+                lambda r: (
+                    f"{r['result']['channel_financials']['rentabelnist'] * 100:.1f}"
+                    if r["result"]["channel_financials"] is not None else "—"
+                ),
+                False,
+            ),
+            (
+                "Прибуток, грн",
+                lambda r: (
+                    _fmt(r["result"]["channel_financials"]["prybutok"])
+                    if r["result"]["channel_financials"] is not None else "—"
+                ),
+                False,
+            ),
         ]
 
         header_html = "<th>Показник</th>" + "".join(f"<th>{h}</th>" for h in headers)
