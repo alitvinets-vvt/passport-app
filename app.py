@@ -21,6 +21,7 @@ from calculator import (
     compare_naklady,
     compare_naklady_fact,
     default_naklady,
+    get_channel_mix_defaults,
     get_retail_discount,
 )
 from export import export_fact_to_xlsx, export_to_xlsx
@@ -473,6 +474,101 @@ with tab_plan:
         return f"{value}{suffix}"
 
 
+    def _channel_mix_expander(key_prefix: str) -> dict:
+        """Розгортаний блок "Канальний мікс" — зважений мікс трьох каналів
+        продажу (B2B/B2C/Ecomm) з різною економікою. ДОДАТКОВИЙ до плоскої
+        "Знижки рітейлу" вище (не заміна) — та сама книга рахується двома
+        паралельними шляхами: точка беззбитковості (плоска знижка) і
+        Маржа/Рентабельність/Прибуток (канальний мікс).
+
+        Повертає channel_mix dict (частки й знижки як частки 0..1) —
+        коректність суми часток (=100%) перевіряє
+        _channel_mix_shares_valid() окремо, на момент розрахунку, а не тут.
+        """
+        defaults = get_channel_mix_defaults(params)
+        with st.expander("Канальний мікс", expanded=False):
+            st.caption(
+                "Розподіл відвантаженого тиражу по каналах продажу з різною "
+                "економікою — додатковий, паралельний розрахунок фінансових "
+                "показників накладу поруч із точкою беззбитковості вище."
+            )
+            mc1, mc2, mc3 = st.columns(3)
+            b2b_share_pct = mc1.number_input(
+                "B2B, %", min_value=0, max_value=100,
+                value=round(defaults["b2b_share"] * 100), step=1,
+                key=f"{key_prefix}_b2b_share", help="Гурт/дистрибуція",
+            )
+            b2c_share_pct = mc2.number_input(
+                "B2C, %", min_value=0, max_value=100,
+                value=round(defaults["b2c_share"] * 100), step=1,
+                key=f"{key_prefix}_b2c_share", help="Власна мережа магазинів",
+            )
+            ecomm_share_pct = mc3.number_input(
+                "Ecomm, %", min_value=0, max_value=100,
+                value=round(defaults["ecomm_share"] * 100), step=1,
+                key=f"{key_prefix}_ecomm_share", help="Власний інтернет-магазин",
+            )
+            total_share_pct = b2b_share_pct + b2c_share_pct + ecomm_share_pct
+            if total_share_pct != 100:
+                st.warning(f"⚠️ Мікс каналів має сумувати до 100% (зараз {total_share_pct}%).")
+
+            st.markdown("**B2B**")
+            b2b_discount_pct = st.number_input(
+                "Знижка B2B, %", min_value=0, max_value=100,
+                value=round(defaults["b2b_discount"] * 100), step=1,
+                key=f"{key_prefix}_b2b_discount",
+                help="Реальна зовнішня знижка — гроші повністю покидають компанію",
+            )
+
+            st.markdown("**B2C**")
+            bc1, bc2 = st.columns(2)
+            b2c_promo_pct = bc1.number_input(
+                "Споживча знижка/акція, %", min_value=0, max_value=100,
+                value=round(defaults["b2c_promo_discount"] * 100), step=1,
+                key=f"{key_prefix}_b2c_promo",
+                help="⚠️ Уточнити: реальна типова глибина акцій від маркетингу",
+            )
+            b2c_opex_pct = bc2.number_input(
+                "Операційні витрати каналу, %", min_value=0, max_value=100,
+                value=round(defaults["b2c_opex"] * 100), step=1,
+                key=f"{key_prefix}_b2c_opex",
+                help="Оренда + персонал + логістика в точки, % від фактичної ціни продажу",
+            )
+
+            st.markdown("**Ecomm**")
+            ec1, ec2 = st.columns(2)
+            ecomm_promo_pct = ec1.number_input(
+                "Споживча знижка/акція, %", min_value=0, max_value=100,
+                value=round(defaults["ecomm_promo_discount"] * 100), step=1,
+                key=f"{key_prefix}_ecomm_promo",
+                help="⚠️ Уточнити: реальна типова глибина акцій від маркетингу",
+            )
+            ecomm_opex_pct = ec2.number_input(
+                "Операційні витрати каналу, %", min_value=0, max_value=100,
+                value=round(defaults["ecomm_opex"] * 100), step=1,
+                key=f"{key_prefix}_ecomm_opex",
+                help="Платформа + еквайринг + доставка + маркетинг + повернення",
+            )
+
+        return {
+            "b2b_share": b2b_share_pct / 100.0,
+            "b2c_share": b2c_share_pct / 100.0,
+            "ecomm_share": ecomm_share_pct / 100.0,
+            "b2b_discount": b2b_discount_pct / 100.0,
+            "b2c_promo_discount": b2c_promo_pct / 100.0,
+            "b2c_opex": b2c_opex_pct / 100.0,
+            "ecomm_promo_discount": ecomm_promo_pct / 100.0,
+            "ecomm_opex": ecomm_opex_pct / 100.0,
+        }
+
+
+    def _channel_mix_shares_valid(channel_mix: dict) -> bool:
+        total = (
+            channel_mix["b2b_share"] + channel_mix["b2c_share"] + channel_mix["ecomm_share"]
+        )
+        return abs(total - 1.0) <= 0.001
+
+
     def _metric_card(column, label, value, caption=None, help_text=None):
         """Картка-метрика власною розміткою (не st.metric) — підпис
         переноситься по словах, число переноситься замість обрізання
@@ -613,6 +709,8 @@ with tab_plan:
             r2.write(f"**Обкладинка ({fmt} / {effect}):** {_display_value(params['cover'].get((fmt, effect)))} грн")
             r2.write(f"**Тир ({naklad}):** {tier['tier'] if tier else '—'} (k={tier['k'] if tier else '—'})")
 
+    channel_mix = _channel_mix_expander("plan")
+
     st.divider()
 
     # ---- Розрахунок (§4-§8 драфту) — Блок 1 (оригінал-макет) + заготовка РРЦ ----
@@ -636,6 +734,7 @@ with tab_plan:
         "avans": avans,
         "storinkovist_multiplier": storinkovist_multiplier,
         "retail_discount": retail_discount_pct / 100.0,
+        "channel_mix": channel_mix,
     }
 
     tab_single, tab_compare = st.tabs(["🧮 Одиночний розрахунок", "📊 Порівняння накладів"])
@@ -691,6 +790,18 @@ with tab_plan:
                     "перевищує наклад — книжка не окупається навіть повністю проданим "
                     "тиражем за поточної знижки рітейлу."
                 )
+
+            # ---- Фінансові показники накладу за канальним міксом — ДОДАТКОВИЙ,
+            # паралельний блок до точки беззбитковості вище (не заміна). ----
+            if not _channel_mix_shares_valid(inputs["channel_mix"]):
+                st.warning("⚠️ Мікс каналів має сумувати до 100%.")
+            elif result["channel_financials"] is not None:
+                cf = result["channel_financials"]
+                st.markdown("**Фінансові показники накладу (канальний мікс)**")
+                cm1, cm2, cm3 = st.columns(3)
+                _metric_card(cm1, "Маржа, %", f"{cf['marzha'] * 100:.1f}")
+                _metric_card(cm2, "Рентабельність, %", f"{cf['rentabelnist'] * 100:.1f}")
+                _metric_card(cm3, "Прибуток, грн", _fmt(cf["prybutok"]))
 
             project_ready = bool(project_index.strip()) and bool(project_name.strip())
             if not project_ready:
@@ -869,6 +980,8 @@ with tab_fact:
             help="Частка РРЦ, яку забирає рітейл для розрахунку точки беззбитковості",
         )
 
+    fact_channel_mix = _channel_mix_expander("fact")
+
     with st.container(key="fact_naklad_caption"):
         st.caption(
             "Наклади для порівняння — редагований список, додавайте чи "
@@ -895,6 +1008,7 @@ with tab_fact:
         "effect": fact_effect,
         "has_zriz": fact_has_zriz,
         "retail_discount": fact_retail_discount_pct / 100.0,
+        "channel_mix": fact_channel_mix,
     }
 
     if st.button("🧮 Порахувати наклади", type="primary", key="fact_calc_button"):

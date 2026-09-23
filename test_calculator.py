@@ -22,10 +22,12 @@ import unittest
 from calculator import (
     DEFAULT_FACT_NAKLADY,
     calculate,
+    calculate_channel_financials,
     calculate_fact,
     compare_naklady,
     compare_naklady_fact,
     default_naklady,
+    get_channel_mix_defaults,
     get_retail_discount,
 )
 
@@ -722,6 +724,159 @@ class CalculateFactTest(unittest.TestCase):
             {**FACT_INPUTS, "naklad": 3100, "retail_discount": 0.30}, REFERENCE_PARAMS
         )
         self.assertAlmostEqual(result["breakeven"]["retail_discount"], 0.30, places=6)
+
+
+CHANNEL_MIX_DEFAULT = {
+    "b2b_share": 0.70,
+    "b2c_share": 0.15,
+    "ecomm_share": 0.15,
+    "b2b_discount": 0.45,
+    "b2c_promo_discount": 0.0,
+    "b2c_opex": 0.25,
+    "ecomm_promo_discount": 0.0,
+    "ecomm_opex": 0.25,
+}
+
+
+class ChannelFinancialsControlExampleTest(unittest.TestCase):
+    """Контрольний приклад канального міксу (нова фіча "Канальний мікс +
+    фінансові показники накладу"), звірений вручну з користувачем
+    2026-09-23: наклад=3100, ОРИГІНАЛ-МАКЕТ=56519,27, друк_за_шт=73,24,
+    РРЦ=359 — уже раніше звірені разом значення (незалежно від
+    block2/rrc основного контрольного прикладу цього файлу — тут
+    calculate_channel_financials() перевіряється як окрема функція на
+    фіксованих скалярах, без проходу через calculate()).
+
+      дохід_b2b   = 359 x (1 - 0,45)                        = 197,45
+      дохід_b2c   = 359 x (1 - 0) x (1 - 0,25)               = 269,25
+      дохід_ecomm = 359 x (1 - 0) x (1 - 0,25)               = 269,25
+      блендований = 0,70x197,45 + 0,15x269,25 + 0,15x269,25  = 218,99
+      Виручка_тиражу      = 3100 x 218,99                    = 678 869,00
+      Собівартість_тиражу = 56519,27 + 73,24 x 3100          = 283 563,27
+      Прибуток             = 678869,00 - 283563,27           = 395 305,73
+      Маржа                 = 395305,73 / 678869,00          ≈ 58,2300%
+      Рентабельність        = 395305,73 / 283563,27          ≈ 139,4065%
+    """
+
+    def setUp(self):
+        self.result = calculate_channel_financials(
+            rrc=359,
+            naklad=3100,
+            oryhinal_maket=56519.27,
+            druk_za_sht=73.24,
+            channel_mix=dict(CHANNEL_MIX_DEFAULT),
+        )
+
+    def test_not_none(self):
+        self.assertIsNotNone(self.result)
+
+    def test_dohid_per_channel(self):
+        self.assertAlmostEqual(self.result["dohid_b2b"], 197.45, places=2)
+        self.assertAlmostEqual(self.result["dohid_b2c"], 269.25, places=2)
+        self.assertAlmostEqual(self.result["dohid_ecomm"], 269.25, places=2)
+
+    def test_blended_dohid(self):
+        self.assertAlmostEqual(self.result["blended_dohid"], 218.99, places=2)
+
+    def test_vyruchka_sobivartist_prybutok(self):
+        self.assertAlmostEqual(self.result["vyruchka"], 678869.00, places=2)
+        self.assertAlmostEqual(self.result["sobivartist"], 283563.27, places=2)
+        self.assertAlmostEqual(self.result["prybutok"], 395305.73, places=2)
+
+    def test_marzha_i_rentabelnist(self):
+        self.assertAlmostEqual(self.result["marzha"] * 100, 58.2300, places=3)
+        self.assertAlmostEqual(self.result["rentabelnist"] * 100, 139.4065, places=3)
+
+
+class ChannelFinancialsBoundaryTest(unittest.TestCase):
+    """Граничні випадки — попередження ("None"), а не крах."""
+
+    def test_mix_not_summing_to_100_percent_returns_none(self):
+        # 0,50 + 0,15 + 0,15 = 0,80 — навмисно не сумує до 100%
+        bad_mix = {**CHANNEL_MIX_DEFAULT, "b2b_share": 0.50}
+        result = calculate_channel_financials(
+            rrc=359, naklad=3100, oryhinal_maket=56519.27, druk_za_sht=73.24,
+            channel_mix=bad_mix,
+        )
+        self.assertIsNone(result)
+
+    def test_none_when_rrc_missing(self):
+        result = calculate_channel_financials(
+            rrc=None, naklad=3100, oryhinal_maket=56519.27, druk_za_sht=73.24,
+            channel_mix=dict(CHANNEL_MIX_DEFAULT),
+        )
+        self.assertIsNone(result)
+
+    def test_none_when_druk_za_sht_missing(self):
+        result = calculate_channel_financials(
+            rrc=359, naklad=3100, oryhinal_maket=56519.27, druk_za_sht=None,
+            channel_mix=dict(CHANNEL_MIX_DEFAULT),
+        )
+        self.assertIsNone(result)
+
+    def test_none_when_naklad_zero(self):
+        result = calculate_channel_financials(
+            rrc=359, naklad=0, oryhinal_maket=56519.27, druk_za_sht=73.24,
+            channel_mix=dict(CHANNEL_MIX_DEFAULT),
+        )
+        self.assertIsNone(result)
+
+
+class GetChannelMixDefaultsTest(unittest.TestCase):
+    """get_channel_mix_defaults() — той самий принцип, що get_retail_discount():
+    safe-дефолти для кожного окремого параметра, якщо блоку КАНАЛЬНИЙ
+    МІКС ще нема в майстер-таблиці (REFERENCE_PARAMS його не задає)."""
+
+    def test_defaults_when_block_missing(self):
+        mix = get_channel_mix_defaults(REFERENCE_PARAMS)
+        self.assertAlmostEqual(mix["b2b_share"], 0.70, places=6)
+        self.assertAlmostEqual(mix["b2c_share"], 0.15, places=6)
+        self.assertAlmostEqual(mix["ecomm_share"], 0.15, places=6)
+        self.assertAlmostEqual(mix["b2b_discount"], 0.45, places=6)
+        self.assertAlmostEqual(mix["b2c_promo_discount"], 0.0, places=6)
+        self.assertAlmostEqual(mix["b2c_opex"], 0.25, places=6)
+        self.assertAlmostEqual(mix["ecomm_promo_discount"], 0.0, places=6)
+        self.assertAlmostEqual(mix["ecomm_opex"], 0.25, places=6)
+
+    def test_override_from_params_falls_back_per_parameter(self):
+        params = {
+            **REFERENCE_PARAMS,
+            "channel_mix": {
+                "Частка B2B": 0.60, "Частка B2C": 0.20, "Частка Ecomm": 0.20,
+            },
+        }
+        mix = get_channel_mix_defaults(params)
+        self.assertAlmostEqual(mix["b2b_share"], 0.60, places=6)
+        self.assertAlmostEqual(mix["b2c_share"], 0.20, places=6)
+        self.assertAlmostEqual(mix["ecomm_share"], 0.20, places=6)
+        # Незадані в params параметри лишаються дефолтами, не 0.
+        self.assertAlmostEqual(mix["b2b_discount"], 0.45, places=6)
+
+
+class CalculateIncludesChannelFinancialsTest(unittest.TestCase):
+    """calculate()/calculate_fact() автоматично рахують channel_financials
+    з дефолтним каналовим міксом, якщо inputs не передають власний
+    override — ДОДАТКОВИЙ блок поруч з breakeven, не заміна."""
+
+    def test_channel_financials_present_with_default_mix(self):
+        result = calculate(dict(REFERENCE_INPUTS), REFERENCE_PARAMS)
+        self.assertIsNotNone(result["channel_financials"])
+        self.assertIn("marzha", result["channel_financials"])
+        self.assertIn("rentabelnist", result["channel_financials"])
+        self.assertIsNotNone(result["breakeven"])
+
+    def test_channel_financials_none_when_explicit_mix_invalid(self):
+        bad_mix = {**CHANNEL_MIX_DEFAULT, "b2b_share": 0.50}
+        inputs = {**REFERENCE_INPUTS, "channel_mix": bad_mix}
+        result = calculate(dict(inputs), REFERENCE_PARAMS)
+        self.assertIsNone(result["channel_financials"])
+        # РРЦ і точка беззбитковості не зачеплені невалідним каналовим міксом.
+        self.assertIsNotNone(result["rrc"])
+        self.assertIsNotNone(result["breakeven"])
+
+    def test_calculate_fact_also_includes_channel_financials(self):
+        result = calculate_fact({**FACT_INPUTS, "naklad": 3100}, REFERENCE_PARAMS)
+        self.assertIsNotNone(result["channel_financials"])
 
 
 if __name__ == "__main__":

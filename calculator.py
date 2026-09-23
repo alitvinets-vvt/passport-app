@@ -20,6 +20,34 @@ from sheets_reader import get_tier_for_naklad
 
 DEFAULT_RETAIL_DISCOUNT = 0.45
 
+# Канальний мікс (§ нова фіча) — дефолти, якщо блоку "КАНАЛЬНИЙ МІКС" ще
+# нема в майстер-таблиці, або конкретний параметр у ньому порожній.
+# Споживчі знижки B2C/Ecomm навмисно 0% — ПЛЕЙСХОЛДЕР до уточнення
+# реальної типової глибини акцій від маркетингу (див. get_channel_mix()).
+DEFAULT_CHANNEL_MIX = {
+    "b2b_share": 0.70,
+    "b2c_share": 0.15,
+    "ecomm_share": 0.15,
+    "b2b_discount": 0.45,
+    "b2c_promo_discount": 0.0,
+    "b2c_opex": 0.25,
+    "ecomm_promo_discount": 0.0,
+    "ecomm_opex": 0.25,
+}
+
+# Відповідність внутрішнього ключа й назви рядка "Параметр" у блоці
+# "КАНАЛЬНИЙ МІКС" майстер-таблиці (той самий принцип, що блок ЗАГАЛЬНІ).
+_CHANNEL_MIX_LABELS = {
+    "b2b_share": "Частка B2B",
+    "b2c_share": "Частка B2C",
+    "ecomm_share": "Частка Ecomm",
+    "b2b_discount": "Знижка B2B",
+    "b2c_promo_discount": "Споживча знижка B2C",
+    "b2c_opex": "Операційні витрати B2C",
+    "ecomm_promo_discount": "Споживча знижка Ecomm",
+    "ecomm_opex": "Операційні витрати Ecomm",
+}
+
 
 def _to_float(v, default=0.0):
     if v is None:
@@ -33,6 +61,84 @@ def get_retail_discount(params: dict) -> float:
     (щоб точка беззбитковості не падала, доки технолог не додав рядок)."""
     general = params.get("general", {})
     return _to_float(general.get("Знижка рітейлу"), DEFAULT_RETAIL_DISCOUNT)
+
+
+def get_channel_mix_defaults(params: dict) -> dict:
+    """Дефолти каналів (частка 0..1) з params["channel_mix"] (блок
+    "КАНАЛЬНИЙ МІКС" майстер-таблиці), інакше DEFAULT_CHANNEL_MIX для
+    кожного окремого параметра, якщо його ще нема в таблиці чи блоку
+    взагалі немає — той самий принцип, що get_retail_discount()."""
+    block = params.get("channel_mix", {})
+    return {
+        key: _to_float(block.get(label), DEFAULT_CHANNEL_MIX[key])
+        for key, label in _CHANNEL_MIX_LABELS.items()
+    }
+
+
+def calculate_channel_financials(
+    rrc, naklad: float, oryhinal_maket: float, druk_za_sht, channel_mix: dict
+):
+    """
+    Дохід на 1 проданий примірник по каналах, зважений (блендований)
+    дохід і фінансові показники тиражу (Виручка/Собівартість/Прибуток/
+    Маржа/Рентабельність) — додатковий, паралельний до точки
+    беззбитковості розрахунок (не заміна).
+
+    B2B — ОДНЕ число знижки (гроші повністю покидають компанію):
+      дохід_b2b = РРЦ x (1 − b2b_discount)
+
+    B2C/Ecomm — ДВА окремих числа, множення послідовне (спершу акція
+    збиває фактичну ціну продажу, ПОТІМ від неї віднімається операційка
+    каналу), НЕ додавання й НЕ одне число:
+      дохід_b2c   = РРЦ x (1 − b2c_promo_discount)   x (1 − b2c_opex)
+      дохід_ecomm = РРЦ x (1 − ecomm_promo_discount) x (1 − ecomm_opex)
+
+    channel_mix: b2b_share, b2c_share, ecomm_share (частки 0..1, мають
+      сумувати до 1.0 — інакше мікс каналів невизначений і функція
+      повертає None, а не довільний/помилковий розрахунок), b2b_discount,
+      b2c_promo_discount, b2c_opex, ecomm_promo_discount, ecomm_opex.
+
+    Повертає None, якщо:
+      - rrc чи druk_za_sht ще не порахований (бракує даних у майстер-
+        таблиці для обраної комбінації формат/ефект/наклад), або
+      - наклад <= 0, або
+      - частки каналів не сумують до 100% (з похibкою округлення 0,1 в.п.).
+    """
+    if rrc is None or druk_za_sht is None or not naklad:
+        return None
+
+    b2b_share = channel_mix["b2b_share"]
+    b2c_share = channel_mix["b2c_share"]
+    ecomm_share = channel_mix["ecomm_share"]
+
+    if abs(b2b_share + b2c_share + ecomm_share - 1.0) > 0.001:
+        return None
+
+    dohid_b2b = rrc * (1 - channel_mix["b2b_discount"])
+    dohid_b2c = rrc * (1 - channel_mix["b2c_promo_discount"]) * (1 - channel_mix["b2c_opex"])
+    dohid_ecomm = (
+        rrc * (1 - channel_mix["ecomm_promo_discount"]) * (1 - channel_mix["ecomm_opex"])
+    )
+
+    blended_dohid = b2b_share * dohid_b2b + b2c_share * dohid_b2c + ecomm_share * dohid_ecomm
+
+    vyruchka = naklad * blended_dohid
+    sobivartist = oryhinal_maket + druk_za_sht * naklad
+    prybutok = vyruchka - sobivartist
+    marzha = prybutok / vyruchka if vyruchka else None
+    rentabelnist = prybutok / sobivartist if sobivartist else None
+
+    return {
+        "dohid_b2b": dohid_b2b,
+        "dohid_b2c": dohid_b2c,
+        "dohid_ecomm": dohid_ecomm,
+        "blended_dohid": blended_dohid,
+        "vyruchka": vyruchka,
+        "sobivartist": sobivartist,
+        "prybutok": prybutok,
+        "marzha": marzha,
+        "rentabelnist": rentabelnist,
+    }
 
 
 def _round_to_9(x: float) -> int:
@@ -301,7 +407,11 @@ def calculate(inputs: dict, params: dict) -> dict:
         редагування не знайдено в майстер-таблиці для обраної зірки/
         складності; відповідна стаття тоді порахована як 0, а не
         пропущена — UI повинен показати явне попередження, не тишком
-        приховувати брак даних під правдоподібним нулем).
+        приховувати брак даних під правдоподібним нулем),
+      channel_financials (Виручка/Собівартість/Прибуток/Маржа/
+        Рентабельність за зваженим каналовим міксом — див.
+        calculate_channel_financials(); None, якщо rrc ще не
+        порахований або мікс каналів не сумує до 100%).
     """
     general = params.get("general", {})
     block1 = _calculate_block1(inputs, params)
@@ -332,6 +442,12 @@ def calculate(inputs: dict, params: dict) -> dict:
                 "retail_discount": retail_discount,
             }
 
+    channel_mix = inputs.get("channel_mix")
+    channel_mix = get_channel_mix_defaults(params) if channel_mix is None else channel_mix
+    channel_financials = calculate_channel_financials(
+        rrc, naklad, block1["oryhinal_maket"], druk_za_sht, channel_mix
+    )
+
     return {
         "znaky_rozrah": block1["znaky_rozrah"],
         "tarif_pereklad": block1["tarif_pereklad"],
@@ -345,6 +461,7 @@ def calculate(inputs: dict, params: dict) -> dict:
         "rrc": rrc,
         "breakeven": breakeven,
         "missing_tarify": block1["missing_tarify"],
+        "channel_financials": channel_financials,
     }
 
 
@@ -370,9 +487,9 @@ def calculate_fact(inputs: dict, params: dict) -> dict:
       has_zriz, naklad, retail_discount (опційно, як у calculate()).
 
     Повертає: oryhinal_maket, storinky, block2 (= _print_calc() чи
-      None), druk_za_sht, rrc, breakeven — та сама форма ключів, що й
-      у calculate(), тільки без znaky_rozrah/rows/inshi/missing_tarify
-      (Блоку 1 тут немає).
+      None), druk_za_sht, rrc, breakeven, channel_financials — та сама
+      форма ключів, що й у calculate(), тільки без znaky_rozrah/rows/
+      inshi/missing_tarify (Блоку 1 тут немає).
     """
     general = params.get("general", {})
     oryhinal_maket = _to_float(inputs.get("oryhinal_maket"))
@@ -408,6 +525,12 @@ def calculate_fact(inputs: dict, params: dict) -> dict:
                 "retail_discount": retail_discount,
             }
 
+    channel_mix = inputs.get("channel_mix")
+    channel_mix = get_channel_mix_defaults(params) if channel_mix is None else channel_mix
+    channel_financials = calculate_channel_financials(
+        rrc, naklad, oryhinal_maket, druk_za_sht, channel_mix
+    )
+
     return {
         "oryhinal_maket": oryhinal_maket,
         "storinky": storinky,
@@ -415,6 +538,7 @@ def calculate_fact(inputs: dict, params: dict) -> dict:
         "druk_za_sht": druk_za_sht,
         "rrc": rrc,
         "breakeven": breakeven,
+        "channel_financials": channel_financials,
     }
 
 

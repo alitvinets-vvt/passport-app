@@ -30,6 +30,7 @@ BANNERS = [
     "ОБКЛАДИНКА",
     "ТИРИ",
     "ЗАГАЛЬНІ",
+    "КАНАЛЬНИЙ МІКС",
 ]
 
 SCOPES = [
@@ -128,6 +129,12 @@ def load_params(sheet_id: str, worksheet_name: str = "Тарифи") -> dict:
       tiers:        [{"tier","lo","band","k","anchor"}, ...]  відсортовано за lo
                     ("anchor" — опційна колонка "Якір", None якщо немає)
       general:      {parametr: value}
+      channel_mix:  {parametr: value} — блок "КАНАЛЬНИЙ МІКС" (частки
+                    каналів B2B/B2C/Ecomm, знижка B2B, споживчі знижки
+                    й операційка B2C/Ecomm), той самий принцип, що
+                    "general". Відсутній рядок чи весь блок — не
+                    помилка, calculator.get_channel_mix_defaults()
+                    підставляє safe-дефолти.
       missing:      список (блок, ключ) із порожніми "жовтими" значеннями — ще не заповнено
     """
     client = _get_client()
@@ -223,6 +230,16 @@ def load_params(sheet_id: str, worksheet_name: str = "Тарифи") -> dict:
             if val is None:
                 missing.append(("ЗАГАЛЬНІ", p))
 
+    # ---- КАНАЛЬНИЙ МІКС ----
+    channel_mix = {}
+    for r in blocks.get("КАНАЛЬНИЙ МІКС", []):
+        p = r.get("Параметр", "").strip()
+        val = _to_float(r.get("Значення"))
+        if p:
+            channel_mix[p] = val
+            if val is None:
+                missing.append(("КАНАЛЬНИЙ МІКС", p))
+
     return {
         "translation": translation,
         "editing": editing,
@@ -231,6 +248,7 @@ def load_params(sheet_id: str, worksheet_name: str = "Тарифи") -> dict:
         "cover": cover,
         "tiers": tiers,
         "general": general,
+        "channel_mix": channel_mix,
         "missing": missing,
     }
 
