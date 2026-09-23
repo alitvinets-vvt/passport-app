@@ -105,6 +105,13 @@ st.markdown(
     div[data-baseweb="select"] > div {
         min-height: 2.3rem;
     }
+    /* Жирний текст вкладок — і верхнього рівня (Плановий Паспорт /
+       Факт → наклади), і підвкладок розрахунку (Одиночний розрахунок /
+       Порівняння накладів) — обидва пуляться цим самим селектором,
+       бо це один і той самий компонент st.tabs(). */
+    button[data-baseweb="tab"] p {
+        font-weight: 700 !important;
+    }
     div[data-testid="stElementContainer"] {
         margin-bottom: 0.15rem !important;
     }
@@ -173,7 +180,7 @@ st.markdown(
         font-weight: 600;
         text-transform: uppercase;
         letter-spacing: 0.03em;
-        color: #8a7f6d;
+        color: #4A4238;
         font-size: 0.75rem;
         white-space: normal;
         overflow-wrap: break-word;
@@ -288,8 +295,34 @@ st.markdown(
         font-size: 0.75rem;
         font-weight: 400;
         text-transform: none;
-        color: #8a7f6d;
+        color: #4A4238;
         letter-spacing: 0;
+    }
+
+    /* Блок "Значення з таблиці для обраних параметрів" — довідковий,
+       не має конкурувати з основними полями форми й результатами:
+       розмір шрифту зменшено на 30% від базового (0.7em). */
+    .st-key-lookup_values_block, .st-key-lookup_values_block p {
+        font-size: 0.7em;
+    }
+
+    /* Три підказки, які мають читатись як звичайний текст форми, а не
+       приглушений caption (st.caption за замовчуванням малює текст із
+       opacity: 0.6 поверх основного кольору — тут це прибирається). */
+    .st-key-compare_intro_caption [data-testid="stCaptionContainer"],
+    .st-key-fact_intro_caption [data-testid="stCaptionContainer"],
+    .st-key-fact_naklad_caption [data-testid="stCaptionContainer"] {
+        opacity: 1 !important;
+        color: #241A17 !important;
+    }
+
+    /* Технічні caption'и в "Деталізація розрахунку" — лишаються
+       другорядними за роллю, але темнішими й контрастнішими за
+       кремовий фон, ніж стандартний приглушений st.caption. */
+    .st-key-print_missing_caption [data-testid="stCaptionContainer"],
+    .st-key-print_stats_caption [data-testid="stCaptionContainer"] {
+        opacity: 1 !important;
+        color: #4A4238 !important;
     }
     </style>
     """,
@@ -568,16 +601,17 @@ with tab_plan:
         tier = get_tier_for_naklad(params["tiers"], naklad)
         fmt_data = params["formats"].get(fmt, {})
 
-        r1, r2 = st.columns(2)
-        r1.write(f"**Тариф перекладу ({zirka}):** {params['translation'].get(zirka, '—')} грн/1000 (чистими)")
-        r1.write(f"**Тариф редагування ({complexity}):** {params['editing'].get(complexity, '—')} грн/1000 (чистими)")
-        r1.write(f"**Знаків/стор ({fmt}):** {_display_value(fmt_data.get('znakiv_stor'))}")
-        r1.write(f"**Зошит ({fmt}):** {_display_value(fmt_data.get('zoshyt'))} стор.")
+        with st.container(key="lookup_values_block"):
+            r1, r2 = st.columns(2)
+            r1.write(f"**Тариф перекладу ({zirka}):** {params['translation'].get(zirka, '—')} грн/1000 (чистими)")
+            r1.write(f"**Тариф редагування ({complexity}):** {params['editing'].get(complexity, '—')} грн/1000 (чистими)")
+            r1.write(f"**Знаків/стор ({fmt}):** {_display_value(fmt_data.get('znakiv_stor'))}")
+            r1.write(f"**Зошит ({fmt}):** {_display_value(fmt_data.get('zoshyt'))} стор.")
 
-        r2.write(f"**Ціна зошита T3 ({fmt}):** {_display_value(fmt_data.get('price_zoshyt'))} грн")
-        r2.write(f"**Ціна зрізу ({fmt}):** {_display_value(params['zriz'].get(fmt))} грн")
-        r2.write(f"**Обкладинка ({fmt} / {effect}):** {_display_value(params['cover'].get((fmt, effect)))} грн")
-        r2.write(f"**Тир ({naklad}):** {tier['tier'] if tier else '—'} (k={tier['k'] if tier else '—'})")
+            r2.write(f"**Ціна зошита T3 ({fmt}):** {_display_value(fmt_data.get('price_zoshyt'))} грн")
+            r2.write(f"**Ціна зрізу ({fmt}):** {_display_value(params['zriz'].get(fmt))} грн")
+            r2.write(f"**Обкладинка ({fmt} / {effect}):** {_display_value(params['cover'].get((fmt, effect)))} грн")
+            r2.write(f"**Тир ({naklad}):** {tier['tier'] if tier else '—'} (k={tier['k'] if tier else '—'})")
 
     st.divider()
 
@@ -741,7 +775,8 @@ with tab_plan:
 
                 st.markdown("**Друк (за 1 прим.)**")
                 if block2 is None:
-                    st.caption("Друк не порахований — див. попередження вище.")
+                    with st.container(key="print_missing_caption"):
+                        st.caption("Друк не порахований — див. попередження вище.")
                 else:
                     print_rows = [
                         {"Стаття": "Блок", "Разом, грн": _fmt(block2["blok"])},
@@ -750,18 +785,20 @@ with tab_plan:
                         {"Стаття": "Друк за 1 прим., разом", "Разом, грн": _fmt(block2["razom"])},
                     ]
                     _render_table(print_rows, total_labels={"Друк за 1 прим., разом"})
-                    st.caption(
-                        f"Сторінок: {block2['storinky']:.0f} · Зошитів: {block2['zoshytiv']:.1f} · "
-                        f"Тир: {block2['tier']['tier']} (k={block2['tier']['k']}) · "
-                        f"K_колір: {block2['k_kolir']}"
-                    )
+                    with st.container(key="print_stats_caption"):
+                        st.caption(
+                            f"Сторінок: {block2['storinky']:.0f} · Зошитів: {block2['zoshytiv']:.1f} · "
+                            f"Тир: {block2['tier']['tier']} (k={block2['tier']['k']}) · "
+                            f"K_колір: {block2['k_kolir']}"
+                        )
 
     with tab_compare:
-        st.caption(
-            "Ті самі параметри книги — собівартість і РРЦ одразу на кількох "
-            "накладах, по одному репрезентативному на кожен тир. Список можна "
-            "редагувати: додавайте чи прибирайте рядки."
-        )
+        with st.container(key="compare_intro_caption"):
+            st.caption(
+                "Ті самі параметри книги — собівартість і РРЦ одразу на кількох "
+                "накладах, по одному репрезентативному на кожен тир. Список можна "
+                "редагувати: додавайте чи прибирайте рядки."
+            )
         naklad_editor_df = pd.DataFrame({"Наклад": default_naklady(params["tiers"])})
         edited_naklady_df = st.data_editor(
             naklad_editor_df,
@@ -788,7 +825,8 @@ with tab_plan:
             _render_comparison_table(st.session_state["comparison_rows"])
 
 with tab_fact:
-    st.caption("РРЦ під кілька накладів на основі ГОТОВОЇ суми оригінал-макета")
+    with st.container(key="fact_intro_caption"):
+        st.caption("РРЦ під кілька накладів на основі ГОТОВОЇ суми оригінал-макета")
 
     fact_proj_col1, fact_proj_col2 = st.columns(2)
     with fact_proj_col1:
@@ -831,10 +869,11 @@ with tab_fact:
             help="Частка РРЦ, яку забирає рітейл для розрахунку точки беззбитковості",
         )
 
-    st.caption(
-        "Наклади для порівняння — редагований список, додавайте чи "
-        "прибирайте рядки."
-    )
+    with st.container(key="fact_naklad_caption"):
+        st.caption(
+            "Наклади для порівняння — редагований список, додавайте чи "
+            "прибирайте рядки."
+        )
     fact_naklad_editor_df = pd.DataFrame({"Наклад": DEFAULT_FACT_NAKLADY})
     fact_edited_naklady_df = st.data_editor(
         fact_naklad_editor_df,
