@@ -109,7 +109,7 @@ st.markdown(
        Факт → наклади), і підвкладок розрахунку (Одиночний розрахунок /
        Порівняння накладів) — обидва пуляться цим самим селектором,
        бо це один і той самий компонент st.tabs(). */
-    button[data-baseweb="tab"] p {
+    [data-testid="stTab"] p {
         font-weight: 700 !important;
     }
     div[data-testid="stElementContainer"] {
