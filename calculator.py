@@ -451,6 +451,11 @@ def default_naklady(tiers: list) -> list:
         anchor = t.get("anchor")
         if anchor is None:
             anchor = (t.get("lo") or 0) + 100
+        # Якір 100 (найменший тир) некоректний як наклад для порівняння —
+        # у живій таблиці для нього нема/невірне значення "Якір", тому і
+        # взятий з таблиці, і обчислений фолбек однаково дають 100.
+        if anchor == 100:
+            anchor = 1100
         result.append(anchor)
     return result
 

@@ -28,6 +28,28 @@ from sheets_reader import load_params, get_tier_for_naklad
 
 load_dotenv()
 
+# Лейбли для випадних списків — ТІЛЬКИ візуальне відображення. Внутрішній
+# ключ, яким код шукає тариф у params["translation"]/["cover"]/["editing"],
+# лишається "5★"/"Норма"/"простий" тощо без змін (див. selectbox з
+# format_func нижче) — інакше пошук тарифу зламається.
+ZIRKA_LABELS = {
+    "5★": "Дорого Якісно",
+    "4★": "Репутаційно Якісно",
+    "3★": "Терміново Нормально",
+    "2★": "Не терміново Якісно",
+    "1★": "Спокійний режим",
+}
+COVER_EFFECT_LABELS = {
+    "Норма": "Норма (УФ лак)",
+    "Бонус": "Бонус (+ штамп + софттач)",
+    "Преміум": "Преміум (+ ляссе + суперобкладинка)",
+}
+EDITING_LABELS = {
+    "простий": "просте",
+    "помірний": "помірне",
+    "складний": "складне",
+}
+
 st.set_page_config(page_title="Плановий Паспорт", page_icon="📖", layout="centered")
 
 st.markdown(
@@ -110,6 +132,17 @@ st.markdown(
         font-size: 0.9rem;
     }
 
+    /* Значення в клітинках — і введені вручну (число/текст/вибір),
+       і показники результату (метрик-картки) — однаковий розмір
+       шрифту між собою, щоб жодне число не було "випадково" крупнішим. */
+    .stNumberInput input,
+    .stTextInput input,
+    div[data-baseweb="select"] > div,
+    .metric-card .metric-value {
+        font-family: 'Montserrat', -apple-system, sans-serif !important;
+        font-size: 1.05rem !important;
+    }
+
     .form-group-title {
         font-family: 'Montserrat', -apple-system, sans-serif;
         font-weight: 600;
@@ -118,18 +151,6 @@ st.markdown(
         letter-spacing: 0.04em;
         color: #7A2331;
         margin: 0.1rem 0 0.3rem 0;
-    }
-
-    /* Підзаголовки підгруп усередині колонки форми — дрібний сірий caps,
-       без рамок/плашок, щоб не конкурувати з бордовими заголовками колонок. */
-    .form-subgroup-title {
-        font-family: 'Montserrat', -apple-system, sans-serif;
-        font-weight: 600;
-        font-size: 0.7rem;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        color: #8a7f6d;
-        margin: 0.5rem 0 0.2rem 0;
     }
 
     /* Поля "Індекс проєкту"/"Назва проєкту" — приглушений світло-зелений
@@ -360,7 +381,6 @@ with tab_plan:
     # ---- Форма вводу (§2 драфту v0.2) — поки без розрахунку ----
     st.subheader("Вхідні параметри книжки")
 
-    st.markdown('<p class="form-group-title">Ідентифікація проєкту</p>', unsafe_allow_html=True)
     proj_col1, proj_col2 = st.columns(2)
     with proj_col1:
         project_index = st.text_input("Індекс проєкту", key="project_index_field")
@@ -369,15 +389,23 @@ with tab_plan:
 
     col1, col2 = st.columns(2)
     with col1:
-        st.markdown('<p class="form-group-title">Текст книги</p>', unsafe_allow_html=True)
+        fmt = st.selectbox(
+            "Формат", options=list(params["formats"].keys()) or ["—"],
+            help="84 звичайний, 60 ширший, 70 збільшений",
+        )
+        zirka = st.selectbox(
+            "Зірковість перекладу", options=list(params["translation"].keys()) or ["—"],
+            format_func=lambda z: ZIRKA_LABELS.get(z, z),
+        )
+        complexity = st.selectbox(
+            "Редагування", options=list(params["editing"].keys()) or ["—"],
+            format_func=lambda c: EDITING_LABELS.get(c, c),
+        )
 
-        st.markdown('<p class="form-subgroup-title">Параметри тексту</p>', unsafe_allow_html=True)
-        fmt = st.selectbox("Формат", options=list(params["formats"].keys()) or ["—"])
-        zirka = st.selectbox("Зірковість", options=list(params["translation"].keys()) or ["—"])
-        complexity = st.selectbox("Складність", options=list(params["editing"].keys()) or ["—"])
-
-        st.markdown('<p class="form-subgroup-title">Обсяг і тираж</p>', unsafe_allow_html=True)
-        znaky = st.number_input("Кількість знаків (оригінал)", min_value=0, value=700_000, step=10_000)
+        znaky = st.number_input(
+            "Кількість знаків (оригінал)", min_value=0, value=700_000, step=10_000,
+            help="Знаків тексту в оригінальному творі до перекладу і редагування",
+        )
         is_translated = st.checkbox("Перекладна книга")
         storinkovist_multiplier = st.number_input(
             "Множник сторінковості", min_value=1.0, value=1.0, step=0.05,
@@ -390,32 +418,30 @@ with tab_plan:
         naklad = st.number_input("Наклад", min_value=100, value=3100, step=100)
 
     with col2:
-        st.markdown('<p class="form-group-title">Друк та оформлення</p>', unsafe_allow_html=True)
-
-        st.markdown('<p class="form-subgroup-title">Оформлення блоку</p>', unsafe_allow_html=True)
         color_mode = st.selectbox("Колірність блоку", ["1+1 (ч/б)", "4+4 (повний колір)"])
-        effect = st.selectbox("Ефекти обкладинки", ["Норма", "Бонус", "Преміум"])
+        effect = st.selectbox(
+            "Ефекти обкладинки", ["Норма", "Бонус", "Преміум"],
+            format_func=lambda e: COVER_EFFECT_LABELS.get(e, e),
+            help="Кожен наступний рівень включає ефекти попереднього",
+        )
         has_zriz = st.checkbox("Кольоровий зріз")
 
-        st.markdown('<p class="form-subgroup-title">Витрати на обкладинку</p>', unsafe_allow_html=True)
-        _suma_help = "Сума узгоджена вручну (поки без тарифів у таблиці)."
         oblozhka_suma = st.number_input(
-            "Обкладинка (дизайн), грн чистими", min_value=0, value=0, step=100,
-            help=_suma_help,
+            "Дизайн обкладинки", min_value=0, value=9000, step=100,
+            help="Вартість дизайну чи оригінальної обкладинки",
         )
         efekty_suma = st.number_input(
-            "Ефекти обкладинки, грн чистими", min_value=0, value=0, step=100,
-            help=_suma_help,
+            "Розробка ефектів", min_value=0, value=2000, step=100,
+            help="Розробка додаткових ефектів",
         )
-        avans = st.number_input("Аванс за текст, грн", min_value=0, value=0, step=1000)
+        avans = st.number_input(
+            "Аванс за текст", min_value=0, value=0, step=1000,
+            help="Сума чистими по договору купівлі авторських прав",
+        )
         retail_discount_pct = st.number_input(
             "Знижка рітейлу, %", min_value=0, max_value=100,
             value=round(get_retail_discount(params) * 100), step=1,
-            help=(
-                "Частка РРЦ, яку забирає рітейл. Впливає тільки на точку "
-                "беззбитковості — не на сам розрахунок РРЦ. За замовчуванням — "
-                "значення з майстер-таблиці (блок ЗАГАЛЬНІ)."
-            ),
+            help="Частка РРЦ, яку забирає рітейл для розрахунку точки беззбитковості",
         )
 
     def _display_value(value, suffix=""):
@@ -487,11 +513,21 @@ with tab_plan:
             if breakeven is None:
                 return "—"
             units_label = f"{breakeven['units']:,}".replace(",", " ")
-            return f"{units_label} прим. ({breakeven['percent_of_run']:.1f}%)"
+            return f"{units_label} / {breakeven['percent_of_run']:.1f}%"
+
+        def _format_band(band):
+            """Показ смуги тиру в шапці таблиці — прибирає позначку "(база)"
+            і замінює "понад N" на ">N" незалежно від того, чи є ці
+            позначки в сирому тексті смуги з Google-таблиці."""
+            if not band:
+                return band
+            band = re.sub(r"\s*\(база\)\s*", "", band).strip()
+            band = re.sub(r"^понад\s+", ">", band)
+            return band
 
         headers = []
         for r in rows:
-            band = r["tier"]["band"] if r["tier"] else "—"
+            band = _format_band(r["tier"]["band"]) if r["tier"] else "—"
             naklad_label = f"{int(r['naklad']):,}".replace(",", " ")
             headers.append(f"{naklad_label}<br><span class='comparison-band'>{band}</span>")
 
@@ -609,19 +645,10 @@ with tab_plan:
             _metric_card(m1, "ОРИГІНАЛ-МАКЕТ, грн", _fmt(result["oryhinal_maket"]))
             _metric_card(m2, "Друк за 1 прим., грн", _fmt(block2["razom"]) if block2 else "—")
             if breakeven is None:
-                _metric_card(m3, "Точка беззбитковості, прим.", "—")
+                _metric_card(m3, "Точка беззбитковості", "—")
             else:
                 units_label = f"{breakeven['units']:,}".replace(",", " ")
-                pct = breakeven["percent_of_run"]
-                _metric_card(
-                    m3, "Точка беззбитковості, прим.", units_label,
-                    caption=("⚠️ " if pct > 100 else "") + f"{pct:.0f}% тиражу",
-                    help_text=(
-                        "Скільки примірників треба продати, щоб покрити повну "
-                        "собівартість тиражу — з урахуванням знижки рітейлу "
-                        f"({breakeven['retail_discount'] * 100:.0f}%)."
-                    ),
-                )
+                _metric_card(m3, "Точка беззбитковості", units_label)
 
             if result["rrc"] is None:
                 st.warning(

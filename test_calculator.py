@@ -343,8 +343,10 @@ class CompareNakladyTest(unittest.TestCase):
 
     default_naklady() бере по одному репрезентативному накладу на кожен
     тир із params["tiers"] (нижня межа + 100, бо REFERENCE_PARAMS не
-    задає колонку "Якір"): [100, 2100, 3100, 5100, 7100] для 5 тирів.
-    Наклад для T3 (3000 + 100 = 3100) навмисно збігається з накладом
+    задає колонку "Якір"): [100, 2100, 3100, 5100, 7100] для 5 тирів,
+    але якір найменшого тиру (100) некоректний як наклад, тому
+    default_naklady() підміняє його на 1100 — [1100, 2100, 3100, 5100,
+    7100]. Наклад для T3 (3000 + 100 = 3100) навмисно збігається з накладом
     основного контрольного прикладу (CalculateReferenceExampleTest) —
     це не збіг, а перевірка, що compare_naklady() відтворює той самий
     результат через звичайний виклик calculate() у циклі.
@@ -358,7 +360,7 @@ class CompareNakladyTest(unittest.TestCase):
 
     def test_default_naklady_count_matches_tiers(self):
         self.assertEqual(len(self.naklady), len(REFERENCE_PARAMS["tiers"]))
-        self.assertEqual(self.naklady, [100, 2100.0, 3100.0, 5100.0, 7100.0])
+        self.assertEqual(self.naklady, [1100, 2100.0, 3100.0, 5100.0, 7100.0])
 
     def test_naklad_3100_matches_single_calculate_reference(self):
         row = next(r for r in self.rows if r["naklad"] == 3100.0)
