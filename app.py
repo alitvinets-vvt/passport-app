@@ -33,11 +33,11 @@ load_dotenv()
 # лишається "5★"/"Норма"/"простий" тощо без змін (див. selectbox з
 # format_func нижче) — інакше пошук тарифу зламається.
 ZIRKA_LABELS = {
-    "5★": "Дорого Якісно",
-    "4★": "Репутаційно Якісно",
-    "3★": "Терміново Нормально",
-    "2★": "Не терміново Якісно",
-    "1★": "Спокійний режим",
+    "5★": "5★ Дорого Якісно",
+    "4★": "4★ Репутаційно Якісно",
+    "3★": "3★ Терміново Нормально",
+    "2★": "2★ Не терміново Якісно",
+    "1★": "1★ Спокійний режим",
 }
 COVER_EFFECT_LABELS = {
     "Норма": "Норма (УФ лак)",
@@ -141,16 +141,6 @@ st.markdown(
     .metric-card .metric-value {
         font-family: 'Montserrat', -apple-system, sans-serif !important;
         font-size: 1.05rem !important;
-    }
-
-    .form-group-title {
-        font-family: 'Montserrat', -apple-system, sans-serif;
-        font-weight: 600;
-        font-size: 0.85rem;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        color: #7A2331;
-        margin: 0.1rem 0 0.3rem 0;
     }
 
     /* Поля "Індекс проєкту"/"Назва проєкту" — приглушений світло-зелений
@@ -807,7 +797,6 @@ with tab_fact:
         "тут не рахуються, сторінки беруться як є, без підгонки під кратність."
     )
 
-    st.markdown('<p class="form-group-title">Ідентифікація проєкту</p>', unsafe_allow_html=True)
     fact_proj_col1, fact_proj_col2 = st.columns(2)
     with fact_proj_col1:
         fact_project_index = st.text_input("Індекс проєкту", key="fact_project_index_field")
@@ -816,14 +805,14 @@ with tab_fact:
 
     fcol1, fcol2 = st.columns(2)
     with fcol1:
-        st.markdown('<p class="form-group-title">Оригінал-макет і обсяг</p>', unsafe_allow_html=True)
         fact_oryhinal_maket = st.number_input(
             "Сума видатків на оригінал-макет, грн", min_value=0.0, value=0.0, step=1000.0,
             key="fact_oryhinal_maket",
-            help="Готова сума — з фактичного паспорта чи введена вручну. Статті всередині не рахуються.",
+            help="Внесіть суму видатків на оригінал-макет згідно паспорта",
         )
         fact_fmt = st.selectbox(
-            "Формат", options=list(params["formats"].keys()) or ["—"], key="fact_format"
+            "Формат", options=list(params["formats"].keys()) or ["—"], key="fact_format",
+            help="84 звичайний, 60 ширший, 70 збільшений",
         )
         fact_storinky = st.number_input(
             "Сторінки", min_value=0, value=0, step=1, key="fact_storinky",
@@ -837,21 +826,19 @@ with tab_fact:
             help="Не використовується в розрахунку — тільки для відображення й експорту.",
         )
     with fcol2:
-        st.markdown('<p class="form-group-title">Друк та оформлення</p>', unsafe_allow_html=True)
         fact_color_mode = st.selectbox(
             "Колірність блоку", ["1+1 (ч/б)", "4+4 (повний колір)"], key="fact_color_mode"
         )
         fact_effect = st.selectbox(
-            "Ефекти обкладинки", ["Норма", "Бонус", "Преміум"], key="fact_effect"
+            "Ефекти обкладинки", ["Норма", "Бонус", "Преміум"], key="fact_effect",
+            format_func=lambda e: COVER_EFFECT_LABELS.get(e, e),
+            help="Кожен наступний рівень включає ефекти попереднього",
         )
         fact_has_zriz = st.checkbox("Кольоровий зріз", key="fact_has_zriz")
         fact_retail_discount_pct = st.number_input(
             "Знижка рітейлу, %", min_value=0, max_value=100,
             value=round(get_retail_discount(params) * 100), step=1, key="fact_retail_discount",
-            help=(
-                "Частка РРЦ, яку забирає рітейл. Впливає тільки на точку "
-                "беззбитковості — не на сам розрахунок РРЦ."
-            ),
+            help="Частка РРЦ, яку забирає рітейл для розрахунку точки беззбитковості",
         )
 
     st.caption(
