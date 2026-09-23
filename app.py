@@ -147,7 +147,9 @@ st.markdown(
        фон замість кремового решти форми, щоб виділити ідентифікацію
        проєкту як окрему категорію, а не параметр розрахунку. */
     .st-key-project_index_field [data-testid="stTextInputRootElement"],
-    .st-key-project_name_field [data-testid="stTextInputRootElement"] {
+    .st-key-project_name_field [data-testid="stTextInputRootElement"],
+    .st-key-fact_project_index_field [data-testid="stTextInputRootElement"],
+    .st-key-fact_project_name_field [data-testid="stTextInputRootElement"] {
         background-color: #DCE8D8 !important;
         border-color: #C3D3BE !important;
     }
@@ -297,7 +299,7 @@ st.markdown(
 SHEET_ID = os.environ.get("PASSPORT_SHEET_ID", "")
 params = None
 
-st.title("📖 Плановий Паспорт книжки")
+st.title("🧮 Калькулятор собівартості і РРЦ")
 
 with st.sidebar:
     if st.button("🔄 Оновити дані з таблиці", help="Скинути кеш і перечитати параметри з Google Sheets"):
@@ -369,8 +371,6 @@ tab_plan, tab_fact = st.tabs(["📖 Плановий Паспорт", "🧾 Фа
 
 with tab_plan:
     # ---- Форма вводу (§2 драфту v0.2) — поки без розрахунку ----
-    st.subheader("Вхідні параметри книжки")
-
     proj_col1, proj_col2 = st.columns(2)
     with proj_col1:
         project_index = st.text_input("Індекс проєкту", key="project_index_field")
@@ -582,8 +582,6 @@ with tab_plan:
     st.divider()
 
     # ---- Розрахунок (§4-§8 драфту) — Блок 1 (оригінал-макет) + заготовка РРЦ ----
-    st.subheader("Розрахунок собівартості")
-
     def _fmt(v):
         return f"{v:,.2f}".replace(",", " ")
 
@@ -790,12 +788,7 @@ with tab_plan:
             _render_comparison_table(st.session_state["comparison_rows"])
 
 with tab_fact:
-    st.subheader("🧾 Факт → наклади")
-    st.caption(
-        "РРЦ під кілька накладів на основі ГОТОВОЇ суми оригінал-макета — "
-        "з фактичного паспорта чи введеної вручну. Статті оригінал-макета "
-        "тут не рахуються, сторінки беруться як є, без підгонки під кратність."
-    )
+    st.caption("РРЦ під кілька накладів на основі ГОТОВОЇ суми оригінал-макета")
 
     fact_proj_col1, fact_proj_col2 = st.columns(2)
     with fact_proj_col1:
@@ -816,13 +809,10 @@ with tab_fact:
         )
         fact_storinky = st.number_input(
             "Сторінки", min_value=0, value=0, step=1, key="fact_storinky",
-            help=(
-                "Реальна кількість сторінок з верстки, вже готова — без "
-                "конвертації зі знаків і без підгонки під кратність 8/16."
-            ),
+            help="Реальна кількість сторінок із верстки",
         )
         fact_znaky = st.number_input(
-            "Знаки (довідково)", min_value=0, value=0, step=10_000, key="fact_znaky",
+            "Знаки", min_value=0, value=0, step=10_000, key="fact_znaky",
             help="Не використовується в розрахунку — тільки для відображення й експорту.",
         )
     with fcol2:
